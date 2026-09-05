@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0F6E56">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Snakebox">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Snakebox</title>
+<style>
+:root{
+  --bg:#E9EDF1;--surface:#FFFFFF;--surface-2:#F3F5F7;--line:#D3D9DF;--line-strong:#AEB7C0;
+  --ink:#16202B;--ink-2:#4E5B68;--ink-3:#7A8794;
+  --accent:#185FA5;--accent-soft:#D7E7F8;--free:#FFFFFF;--free-text:#5B6975;
+  --amber:#BA7517;--coral:#D85A30;
+  --r1:#FCEBEB;--r2:#F7C1C1;--r3:#F09595;--r4:#E24B4A;--r5:#A32D2D;--r6:#791F1F;--r7:#501313;
+  --panel-h:34vh;--safe-b:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0F1317;--surface:#1A2027;--surface-2:#232B33;--line:#2E3843;--line-strong:#4A5763;
+    --ink:#EAEFF3;--ink-2:#B4BFC9;--ink-3:#7F8C98;--accent:#6FB0F0;--accent-soft:#1B3A5A;--free:#2A333C;--free-text:#B4BFC9;}
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;min-height:38px}
+button:active{background:var(--line)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--coral)}
+button.icon{width:38px;padding:0;display:inline-grid;place-items:center}
+button:focus-visible,select:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+select{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-height:36px}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+#app{height:100%;display:grid;grid-template-rows:auto 1fr auto auto;grid-template-areas:"head" "board" "panel" "bar"}
+@media (min-width:900px){#app{grid-template-columns:1fr 360px;grid-template-rows:auto 1fr auto;grid-template-areas:"head head" "board panel" "bar panel"}
+  :root{--panel-h:auto}}
+
+header{grid-area:head;display:flex;align-items:center;gap:10px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));background:var(--surface);border-bottom:1px solid var(--line)}
+header h1{font-size:17px;font-weight:600;letter-spacing:-.01em}
+header .q{padding:2px 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-size:13px}
+header .sp{flex:1}
+
+#boardwrap{grid-area:board;position:relative;overflow:hidden;touch-action:none;background:var(--bg);user-select:none}
+#board{width:100%;height:100%;display:block;overflow:visible}
+#zoomctl{position:absolute;right:10px;bottom:8px;display:flex;gap:6px}
+#zoomctl button{width:36px;height:36px;min-height:36px;padding:0;background:var(--surface);border-radius:8px}
+#legend{position:absolute;left:10px;bottom:8px;right:140px;display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--ink-2);pointer-events:none}
+#legend span{display:inline-flex;align-items:center;gap:4px}
+#legend i{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--line-strong);display:inline-block}
+
+/* board styling */
+.e{fill:none;stroke-linecap:round}
+.e.dead{stroke:var(--line);stroke-width:1.3;stroke-dasharray:3 5}
+.e.avail{stroke:var(--line-strong);stroke-width:2}
+.e.snk{stroke-width:5.5}
+.e.contact{stroke:var(--coral);stroke-width:2.5}
+.e.hl{stroke:var(--accent);stroke-width:4}
+.e.cand{stroke:var(--accent);stroke-width:5;stroke-dasharray:7 5}
+.v circle{stroke:var(--line-strong);stroke-width:1.5}
+.v.open circle{stroke:var(--amber);stroke-width:3}
+.v.end circle{stroke:var(--ink);stroke-width:3.5}
+.v.nb circle{stroke:var(--accent);stroke-width:3.5}
+.v.cand circle{stroke:var(--accent);stroke-width:5}
+.v.focus circle{stroke:var(--accent);stroke-width:5.5}
+.v text{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;pointer-events:none}
+.faded .e.dead,.faded .e.avail{opacity:.25}
+
+#panel{grid-area:panel;background:var(--surface);border-top:1px solid var(--line);height:var(--panel-h);overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+@media (min-width:900px){#panel{border-top:none;border-left:1px solid var(--line);height:auto}}
+#stats{display:flex;flex-wrap:wrap;gap:6px}
+.stat{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);font-size:13px}
+.stat i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.stat b{font-weight:600}
+#ctx h2{font-size:14px;font-weight:600;margin-bottom:4px}
+#ctx p{color:var(--ink-2);font-size:13px;margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:8px;border:1.5px solid var(--line);background:var(--surface-2);font-size:13px;cursor:pointer;min-height:32px}
+.chip i{width:10px;height:10px;border-radius:50%;display:inline-block;border:1.5px solid var(--line-strong)}
+.chip.cand{border-color:var(--accent);background:var(--accent-soft)}
+.chip.open{border-color:var(--amber)}
+.chip small{color:var(--ink-3)}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.endrow{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:6px 10px;padding:6px 0;border-top:1px solid var(--line)}
+.endrow:first-of-type{border-top:none}
+.endrow .name{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px}
+.endrow .name i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.empty{color:var(--ink-3);font-size:13px}
+
+#bar{grid-area:bar;display:flex;gap:8px;align-items:center;padding:8px 12px;padding-bottom:calc(8px + var(--safe-b));background:var(--surface);border-top:1px solid var(--line)}
+#bar .sp{flex:1}
+#prog{display:none;flex:1;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+#prog .track{flex:1;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+#prog .fill{height:100%;width:0;background:var(--accent);transition:width .2s}
+
+dialog{border:none;border-radius:14px;background:var(--surface);color:var(--ink);padding:0;max-width:min(92vw,520px);width:100%;max-height:88vh}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog .body{padding:16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;max-height:88vh}
+dialog h2{font-size:17px;font-weight:600}
+dialog h3{font-size:14px;font-weight:600;margin-top:6px}
+.field{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.field label{font-size:14px}
+.field .hint{font-size:12px;color:var(--ink-3)}
+.switch{position:relative;width:44px;height:26px;background:var(--line-strong);border-radius:13px;border:none;padding:0;min-height:0;flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}
+.switch[aria-checked=true]{background:var(--accent)}
+.switch[aria-checked=true]::after{left:21px}
+textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:8px;resize:vertical}
+dialog p,dialog li{font-size:14px;color:var(--ink-2)}
+dialog ul{padding-left:18px;display:flex;flex-direction:column;gap:4px}
+#toast{position:fixed;left:50%;bottom:calc(76px + var(--safe-b));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:13px;max-width:90vw;opacity:0;transition:opacity .2s;pointer-events:none;z-index:5}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Snakebox</h1>
+    <span class="q" id="qchip">Q4</span>
+    <span class="sp"></span>
+    <button class="icon" id="helpbtn" aria-label="How to play" title="How to play">?</button>
+    <button class="icon" id="setbtn" aria-label="Settings" title="Settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+
+  <div id="boardwrap">
+    <svg id="board" viewBox="0 0 680 520" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Hypercube board"><g id="view"></g></svg>
+    <div id="zoomctl">
+      <button id="zin" aria-label="Zoom in">+</button>
+      <button id="zout" aria-label="Zoom out">−</button>
+      <button id="zfit" aria-label="Fit board" title="Fit">⤢</button>
+    </div>
+    <div id="legend"></div>
+  </div>
+
+  <section id="panel">
+    <div id="stats"></div>
+    <div id="ctx"></div>
+  </section>
+
+  <nav id="bar">
+    <button id="undo" aria-label="Undo">Undo</button>
+    <button id="redo" aria-label="Redo">Redo</button>
+    <span class="sp"></span>
+    <div id="prog"><span id="progtxt">Searching</span><div class="track"><div class="fill" id="progfill"></div></div><button id="stop">Stop</button></div>
+    <button id="extend" class="primary">Extend snakes</button>
+  </nav>
+</div>
+
+<dialog id="settings">
+  <div class="body">
+    <h2>Settings</h2>
+    <div class="field"><label for="dim">Dimension</label><select id="dim"></select></div>
+    <div class="field"><label for="count">Snakes</label><select id="count"></select></div>
+    <div class="field"><label id="touchlbl">Snakes may touch<div class="hint">Off: no vertex may be adjacent to two different snakes.</div></label><button class="switch" id="touch" role="switch" aria-checked="false" aria-labelledby="touchlbl"></button></div>
+    <div class="field"><label for="layout">Layout</label><select id="layout"><option value="proj">Cube projection</option><option value="torus">Gray-code grid</option></select></div>
+    <div class="field"><label for="edgesmode">Edges shown<div class="hint">Hide unused edges on big boards.</div></label><select id="edgesmode"><option value="all">All</option><option value="snakes">Snakes and contacts</option></select></div>
+    <div class="field"><label for="labels">Vertex labels</label><select id="labels"><option value="auto">Automatic</option><option value="bin">Binary</option><option value="dec">Decimal</option><option value="none">None</option></select></div>
+    <div class="field"><label for="budget">Search budget<div class="hint">States visited before the search stops.</div></label><select id="budget">
+      <option value="10000000">10 million</option><option value="30000000">30 million</option><option value="100000000">100 million</option><option value="300000000">300 million</option><option value="1000000000">1 billion</option><option value="0">Until stopped</option></select></div>
+    <h3>Position</h3>
+    <div class="row"><button id="copypos">Copy position</button><button id="pastepos">Load position</button><button id="clear" class="danger">Clear board</button></div>
+    <textarea id="postext" placeholder="Paste a copied position here, then tap Load position." spellcheck="false"></textarea>
+    <div class="row"><button id="closeset" class="primary">Done</button></div>
+  </div>
+</dialog>
+
+<dialog id="help">
+  <div class="body">
+    <h2>How to play</h2>
+    <p>A snake is a path in the hypercube where no two of its vertices are adjacent unless they are consecutive on the path. Grow snakes as long as you can.</p>
+    <ul>
+      <li>Tap a white or pink vertex to extend the nearest snake end to it. If more than one end could reach it, you choose.</li>
+      <li>Tap a snake end to select it; its legal moves light up in blue. Tap them in turn to keep growing.</li>
+      <li>Tap a vertex on a snake to cut the snake there, or to delete it.</li>
+      <li>Tap an empty vertex to start a new snake when a slot is free.</li>
+      <li>Shading shows how many snake vertices a vertex touches, from white (none) to deep red. An amber ring marks vertices some end can still reach.</li>
+      <li>Extend snakes runs an exhaustive search from the current position, growing only the snakes already on the board. It stops at the budget set in Settings and keeps the best it found.</li>
+      <li>Pinch or scroll to zoom, drag to pan. In the grid layout, rows are the low bits and columns the high bits, both in Gray-code order, so each row and column is a hypercube of its own.</li>
+    </ul>
+    <p>Longest known snakes: Q2 2, Q3 4, Q4 7, Q5 13, Q6 26, Q7 50, Q8 98. Q9 and Q10 are open.</p>
+    <div class="row"><button id="closehelp" class="primary">Close</button></div>
+  </div>
+</dialog>
+<div id="toast" role="status"></div>
+
+<script>
+(function(){
+'use strict';
+const MAXSNAKE={2:2,3:4,4:7,5:13,6:26,7:50,8:98,9:'190+',10:'370+'};
+const COL=[
+  ['#0F6E56','#1D9E75'],['#534AB7','#7F77DD'],['#185FA5','#378ADD'],['#993556','#D4537E'],['#3B6D11','#639922'],
+  ['#854F0B','#BA7517'],['#0B5F6E','#1B9AB0'],['#6B2D75','#A85BB5'],['#1F2A6B','#4A5BD0'],['#444441','#888780']];
+const REDS=['var(--r1)','var(--r2)','var(--r3)','var(--r4)','var(--r5)','var(--r6)','var(--r7)'];
+const redFill=c=>c===0?'var(--free)':REDS[Math.min(c-1,REDS.length-1)];
+const redText=c=>c===0?'var(--free-text)':c<=3?'#501313':'#ffffff';
+
+const S={n:4,k:2,touch:false,snakes:[[],[]],layout:'proj',edgesMode:'all',labels:'auto',budget:30000000};
+let N=16,pos=[],W=680,H=520,sel=null,hover=-1,undoS=[],redoS=[],vEls=[],eEls=[];
+const $=id=>document.getElementById(id);
+const svg=$('board'),view=$('view'),ctx=$('ctx');
+const bin=v=>v.toString(2).padStart(S.n,'0');
+const lenOf=p=>Math.max(0,p.length-1);
+const total=()=>S.snakes.reduce((s,p)=>s+lenOf(p),0);
+
+/* ---------- graph and layout ---------- */
+function grayIndex(b){const idx=new Array(1<<b);for(let i=0;i<(1<<b);i++)idx[i^(i>>1)]=i;return idx;}
+function buildLayout(){
+  N=1<<S.n;pos=[];
+  if(S.layout==='proj'&&S.n<=4){
+    // parallel projection chosen so that no two vertices or non-incident edges overlap
+    const AX=[[65.2,-249.6],[159.2,-60.4],[330.8,3.5],[-32,-126.4]];
+    const raw=[];for(let i=0;i<N;i++){let x=0,y=0;for(let d=0;d<S.n;d++)if((i>>d)&1){x+=AX[d][0];y+=AX[d][1];}raw.push([x,y]);}
+    const xs=raw.map(p=>p[0]),ys=raw.map(p=>p[1]),mx=Math.min(...xs),my=Math.min(...ys),bw=Math.max(...xs)-mx||1,bh=Math.max(...ys)-my||1;
+    W=680;H=520;const sc=Math.min(600/bw,440/bh,2.2),ox=(W-bw*sc)/2,oy=(H-bh*sc)/2;
+    for(let i=0;i<N;i++)pos[i]={x:ox+(raw[i][0]-mx)*sc,y:oy+(raw[i][1]-my)*sc,r:17};
+    svg.setAttribute('viewBox',`0 0 ${W} ${H}`);return;
+  }
+  const lb=Math.floor(S.n/2),hb=S.n-lb,R=1<<lb,C=1<<hb,gi=grayIndex(lb),gc=grayIndex(hb);
+  const sp=S.n<=4?120:S.n<=6?72:56,r=S.n<=4?17:S.n<=6?15:13,pad=sp*1.1;
+  W=Math.round(2*pad+sp*(C-1));H=Math.round(2*pad+sp*(R-1));
+  for(let i=0;i<N;i++){const row=gi[i&(R-1)],col=gc[i>>lb];pos[i]={x:pad+col*sp,y:pad+row*sp,r,row,col,sp};}
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+}
+function edgePath(a,b){
+  const A=pos[a],B=pos[b];
+  if(A.row===undefined)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
+  const k=A.sp*0.24;
+  if(A.row===B.row){const g=Math.min(8,Math.abs(A.col-B.col));if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
+    return`M${A.x} ${A.y}Q${(A.x+B.x)/2} ${A.y-(k*g+k)} ${B.x} ${B.y}`;}
+  const g=Math.min(8,Math.abs(A.row-B.row));if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
+  return`M${A.x} ${A.y}Q${A.x-(k*g+k)} ${(A.y+B.y)/2} ${B.x} ${B.y}`;
+}
+const label=v=>{const m=S.labels==='auto'?(S.n<=4?'bin':'dec'):S.labels;return m==='bin'?bin(v):m==='dec'?String(v):'';};
+
+/* ---------- rules ---------- */
+function owner(){const o=new Int8Array(N).fill(-1);S.snakes.forEach((p,i)=>p.forEach(v=>o[v]=i));return o;}
+function isEnd(v,o){const p=S.snakes[o[v]];return v===p[0]||v===p[p.length-1];}
+function canJoin(v,i,o){
+  if(o[v]>=0)return false;let ci=0,ca=0;
+  for(let d=0;d<S.n;d++){const u=v^(1<<d);if(o[u]>=0){ca++;if(o[u]===i)ci++;}}
+  return ci===1&&(S.touch||ca===1);
+}
+function joinOptions(v,o){
+  const out=[],seen=new Set();
+  for(let d=0;d<S.n;d++){const u=v^(1<<d);
+    if(o[u]>=0&&isEnd(u,o)&&canJoin(v,o[u],o)){const key=o[u]+':'+u;if(seen.has(key))continue;seen.add(key);
+      const p=S.snakes[o[u]];out.push({i:o[u],end:u,push:u===p[p.length-1]});}}
+  return out;
+}
+function status(){
+  const o=owner(),cnt=new Uint8Array(N),open=new Uint8Array(N);
+  for(let v=0;v<N;v++){if(o[v]>=0)continue;let c=0;
+    for(let d=0;d<S.n;d++){const u=v^(1<<d);if(o[u]>=0){c++;if(!open[v]&&isEnd(u,o)&&canJoin(v,o[u],o))open[v]=1;}}
+    cnt[v]=c;}
+  return{o,cnt,open};
+}
+const emptySlot=()=>S.snakes.findIndex(p=>!p.length);
+function canStart(v,st){return st.o[v]<0&&(S.touch||st.cnt[v]===0)&&emptySlot()>=0;}
+function candidates(i,end,o){const out=[];for(let d=0;d<S.n;d++){const v=end^(1<<d);if(canJoin(v,i,o))out.push(v);}return out;}
+
+/* ---------- state changes ---------- */
+function snapshot(){return S.snakes.map(p=>p.slice());}
+function commit(next,keepSel){
+  undoS.push(snapshot());if(undoS.length>500)undoS.shift();redoS=[];
+  S.snakes=next;if(!keepSel)sel=null;save();render();
+}
+function extendTo(i,end,v){
+  const next=snapshot(),p=next[i];
+  if(end===p[p.length-1])p.push(v);else p.unshift(v);
+  sel={type:'end',i,v};commit(next,true);
+}
+function startAt(v){const i=emptySlot();if(i<0)return;const next=snapshot();next[i]=[v];sel={type:'end',i,v};commit(next,true);}
+function cut(i,j,side){ // side 'head' removes j+1.., 'tail' removes ..j-1, 'all' deletes
+  const next=snapshot();
+  if(side==='all')next[i]=[];else if(side==='head')next[i]=next[i].slice(0,j+1);else next[i]=next[i].slice(j);
+  sel=null;commit(next);
+}
+function removeEndSimple(i,v){const next=snapshot(),p=next[i];let nv;
+  if(p[0]===v){p.shift();nv=p[0];}else{p.pop();nv=p[p.length-1];}
+  sel=p.length?{type:'end',i,v:nv}:null;commit(next,true);}
+
+/* ---------- tap handling ---------- */
+function tapVertex(v){
+  const st=status(),o=st.o;
+  if(sel&&sel.type==='end'){
+    const p=S.snakes[sel.i];
+    if(p&&p.includes(sel.v)&&canJoin(v,sel.i,o)&&isAdj(v,sel.v)){extendTo(sel.i,sel.v,v);return;}
+  }
+  if(o[v]>=0){
+    if(isEnd(v,o)&&!(sel&&sel.type==='end'&&sel.v===v)){sel={type:'end',i:o[v],v};}
+    else if(isEnd(v,o)){sel={type:'vertex',v};}
+    else sel={type:'vertex',v};
+    render();return;
+  }
+  const opts=joinOptions(v,o);
+  if(opts.length===1){extendTo(opts[0].i,opts[0].end,v);return;}
+  if(!opts.length&&S.snakes.every(p=>!p.length)&&canStart(v,st)){startAt(v);return;}
+  sel={type:'vertex',v};render();
+}
+const isAdj=(a,b)=>{const x=a^b;return x&&(x&(x-1))===0;};
+
+/* ---------- rendering ---------- */
+function render(){
+  const st=status(),{o,cnt,open}=st;
+  const showAll=S.edgesMode==='all';
+  let avail=0,contacts=0;
+  const dead=[],av=[],snk=[],con=[];
+  for(let a=0;a<N;a++)for(let d=0;d<S.n;d++){const b=a^(1<<d);if(b<a)continue;
+    let cls;
+    if(o[a]>=0&&o[b]>=0){
+      if(o[a]===o[b]){const p=S.snakes[o[a]];cls=Math.abs(p.indexOf(a)-p.indexOf(b))===1?'snk':'dead';}
+      else cls='contact';
+    }else if(o[a]<0&&o[b]<0)cls=(canStart(a,st)&&canStart(b,st))?'avail':'dead';
+    else if((o[a]>=0&&isEnd(a,o)&&canJoin(b,o[a],o))||(o[b]>=0&&isEnd(b,o)&&canJoin(a,o[b],o)))cls='avail';
+    else cls='dead';
+    if(cls==='avail')avail++;if(cls==='contact')contacts++;
+    if(cls==='snk')snk.push(`<path class="e snk" style="stroke:${COL[o[a]][1]}" d="${edgePath(a,b)}"/>`);
+    else if(cls==='contact')con.push(`<path class="e contact" d="${edgePath(a,b)}"/>`);
+    else if(showAll){(cls==='avail'?av:dead).push(`<path class="e ${cls}" d="${edgePath(a,b)}"/>`);}
+  }
+  const vs=[];
+  for(let v=0;v<N;v++){const P=pos[v],end=o[v]>=0&&isEnd(v,o);let cls='v',cs,ts;
+    if(o[v]>=0){cls+=end?' end':'';cs=`fill:${COL[o[v]][0]};${end?'':'stroke:'+COL[o[v]][0]}`;ts='fill:#fff';}
+    else{cls+=open[v]?' open':'';cs=`fill:${redFill(cnt[v])}`;ts=`fill:${redText(cnt[v])}`;}
+    const lab=label(v),fs=Math.max(9,Math.round(P.r*0.68));
+    vs.push(`<g class="${cls}" data-v="${v}"><circle cx="${P.x}" cy="${P.y}" r="${P.r}" style="${cs}"/>${lab?`<text x="${P.x}" y="${P.y}" dy="${fs*0.36}" font-size="${fs}" text-anchor="middle" style="${ts}">${lab}</text>`:''}</g>`);
+  }
+  view.innerHTML=`<g id="edead">${dead.join('')}</g><g id="eav">${av.join('')}</g><g id="econ">${con.join('')}</g><g id="ov"></g><g id="esnk">${snk.join('')}</g><g id="vg">${vs.join('')}</g>`;
+  vEls=[];view.querySelectorAll('g.v').forEach(g=>vEls[+g.dataset.v]=g);
+  applyHighlights(st);
+  renderStats(st,avail,contacts);
+  renderCtx(st);
+  renderLegend();
+  $('undo').disabled=!undoS.length;$('redo').disabled=!redoS.length;
+  $('qchip').textContent=`Q${S.n}`;
+}
+function applyHighlights(st){
+  const o=st.o,ov=$('ov');let html='';
+  vEls.forEach(g=>g.classList.remove('nb','cand','focus'));
+  svg.classList.remove('faded');
+  const focusV=sel?sel.v:hover;
+  if(focusV>=0&&focusV<N){
+    vEls[focusV].classList.add('focus');svg.classList.add('faded');
+    for(let d=0;d<S.n;d++){const u=focusV^(1<<d);vEls[u].classList.add('nb');html+=`<path class="e hl" d="${edgePath(focusV,u)}"/>`;}
+  }
+  if(sel&&sel.type==='end'){
+    for(const v of candidates(sel.i,sel.v,o)){vEls[v].classList.add('cand');html+=`<path class="e cand" d="${edgePath(sel.v,v)}"/>`;}
+  }
+  ov.innerHTML=html;
+}
+function renderStats(st,avail,contacts){
+  const chips=S.snakes.map((p,i)=>`<span class="stat"><i style="background:${COL[i][0]}"></i>${p.length?`<b>${lenOf(p)}</b>`:'<span class="empty">empty</span>'}</span>`).join('');
+  $('stats').innerHTML=chips+`<span class="stat">total <b>${total()}</b></span><span class="stat">moves <b>${avail}</b></span>`+((S.touch||contacts)?`<span class="stat" style="color:var(--coral)">contacts <b>${contacts}</b></span>`:'')+`<span class="stat">best known <b>${MAXSNAKE[S.n]}</b></span>`;
+}
+function vchip(v,st,extra){
+  const o=st.o;const tag=o[v]>=0?`<i style="background:${COL[o[v]][0]};border-color:${COL[o[v]][0]}"></i>`:`<i style="background:${redFill(st.cnt[v])}"></i>`;
+  return`<button class="chip mono ${extra||''}" data-go="${v}">${tag}${bin(v)}${S.n>4?`<small>${v}</small>`:''}</button>`;
+}
+function renderCtx(st){
+  const o=st.o;let h='';
+  if(!sel){
+    if(S.snakes.every(p=>!p.length)){h=`<h2>Empty board</h2><p>Tap any vertex to start snake 1. In the grid, rows are the low bits and columns the high bits, each in Gray-code order.</p>`;}
+    else{
+      h=`<h2>Snake ends</h2><p>Tap an end to select it and see its legal moves.</p>`;
+      S.snakes.forEach((p,i)=>{if(!p.length)return;
+        const head=p[p.length-1],tail=p[0];
+        const ends=head===tail?[tail]:[tail,head];
+        h+=`<div class="endrow"><span class="name"><i style="background:${COL[i][0]}"></i>Snake ${i+1} <small>${lenOf(p)}</small></span><span class="chips" style="margin:0">`+
+          ends.map(e=>`<button class="chip mono" data-end="${i}:${e}"><i style="background:${COL[i][0]};border-color:${COL[i][0]}"></i>${bin(e)}<small>${candidates(i,e,o).length} moves</small></button>`).join('')+`</span></div>`;});
+      if(emptySlot()>=0)h+=`<p style="margin-top:8px">Slot ${emptySlot()+1} is free: tap an unused vertex to start a snake there.</p>`;
+    }
+  }else if(sel.type==='end'){
+    const i=sel.i,p=S.snakes[i],v=sel.v,c=candidates(i,v,o),other=p[0]===v?p[p.length-1]:p[0];
+    h=`<h2><span style="color:${COL[i][1]}">Snake ${i+1}</span> · ${p[0]===v&&p.length>1?'tail':'head'} <span class="mono">${bin(v)}</span></h2>`;
+    h+=c.length?`<p>${c.length} legal move${c.length===1?'':'s'}. Tap one to extend.</p><div class="chips">${c.map(u=>vchip(u,st,'cand')).join('')}</div>`:`<p>This end is stuck: every neighbor is taken or burned.</p>`;
+    h+=`<div class="row">${other!==v?`<button data-end="${i}:${other}">Other end</button>`:''}<button data-act="removeEnd" data-i="${i}" data-v="${v}">Remove this vertex</button>${p.length>1?`<button class="danger" data-act="deleteSnake" data-i="${i}">Delete snake</button>`:''}<button data-act="deselect">Done</button></div>`;
+  }else{
+    const v=sel.v;
+    if(o[v]>=0){
+      const i=o[v],p=S.snakes[i],j=p.indexOf(v),toHead=p.length-1-j,toTail=j;
+      h=`<h2><span style="color:${COL[i][1]}">Snake ${i+1}</span> · vertex ${j+1} of ${p.length} · <span class="mono">${bin(v)}</span></h2><p>Cut the snake here, keeping this vertex.</p><div class="row">`;
+      if(toHead>0)h+=`<button data-act="cut" data-i="${i}" data-j="${j}" data-side="head">Drop head side (${toHead})</button>`;
+      if(toTail>0)h+=`<button data-act="cut" data-i="${i}" data-j="${j}" data-side="tail">Drop tail side (${toTail})</button>`;
+      h+=`<button class="danger" data-act="deleteSnake" data-i="${i}">Delete snake</button><button data-act="deselect">Done</button></div>`;
+    }else{
+      const opts=joinOptions(v,o),c=st.cnt[v];
+      h=`<h2><span class="mono">${bin(v)}</span> <small style="color:var(--ink-3)">${v}</small></h2><p>${c} snake neighbor${c===1?'':'s'}.</p>`;
+      if(opts.length)h+=`<div class="row">${opts.map(op=>`<button class="primary" data-act="join" data-i="${op.i}" data-end="${op.end}" data-v="${v}">Extend snake ${op.i+1} from <span class="mono">${bin(op.end)}</span></button>`).join('')}</div>`;
+      else if(canStart(v,st))h+=`<div class="row"><button class="primary" data-act="start" data-v="${v}">Start snake ${emptySlot()+1} here</button></div>`;
+      else h+=`<p>No snake can reach this vertex right now.</p>`;
+      h+=`<p style="margin-top:8px">Neighbors</p><div class="chips">`;
+      for(let d=0;d<S.n;d++)h+=vchip(v^(1<<d),st,o[v^(1<<d)]<0&&st.open[v^(1<<d)]?'open':'');
+      h+=`</div><div class="row"><button data-act="deselect">Done</button></div>`;
+    }
+  }
+  ctx.innerHTML=h;
+}
+function renderLegend(){
+  const items=[`<span><i style="background:var(--free)"></i>0</span>`];
+  for(let c=1;c<=Math.min(S.n,REDS.length);c++)items.push(`<span><i style="background:${redFill(c)}"></i>${c}${c===REDS.length&&S.n>REDS.length?'+':''}</span>`);
+  items.push(`<span><i style="border-color:var(--amber);border-width:2.5px"></i>reachable</span>`);
+  $('legend').innerHTML=`<span>snake neighbors</span>`+items.join('');
+}
+
+/* ---------- pan & zoom ---------- */
+let Z=1,TX=0,TY=0;
+function applyView(){view.setAttribute('transform',`translate(${TX} ${TY}) scale(${Z})`);}
+function svgPt(cx,cy){const pt=svg.createSVGPoint();pt.x=cx;pt.y=cy;return pt.matrixTransform(svg.getScreenCTM().inverse());}
+function toBoard(cx,cy){const p=svgPt(cx,cy);return{x:(p.x-TX)/Z,y:(p.y-TY)/Z};}
+function zoomAt(f,cx,cy){const p=svgPt(cx,cy);const nz=Math.min(12,Math.max(0.4,Z*f));TX=p.x-(p.x-TX)*(nz/Z);TY=p.y-(p.y-TY)*(nz/Z);Z=nz;applyView();}
+function fit(){Z=1;TX=0;TY=0;applyView();}
+function centerOn(v){const P=pos[v];const z=Math.max(Z,S.n>=7?3:S.n>=5?2:1);Z=z;TX=W/2-z*P.x;TY=H/2-z*P.y;applyView();}
+const ptrs=new Map();let drag=null,pinch=null,moved=false;
+const wrap=$('boardwrap');
+wrap.addEventListener('pointerdown',e=>{if(e.target.closest('#zoomctl'))return;wrap.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===1){drag={x:e.clientX,y:e.clientY,tx:TX,ty:TY,t:Date.now()};moved=false;}
+  else if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:Z,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,tx:TX,ty:TY};drag=null;}});
+wrap.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pinch&&ptrs.size===2){const[a,b]=[...ptrs.values()];const d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+    const f=Math.min(12,Math.max(0.4,pinch.z*d/pinch.d))/pinch.z;const p0=svgPt(pinch.mx,pinch.my),p1=svgPt(mx,my);
+    const nz=pinch.z*f;TX=p1.x-(p0.x-pinch.tx)*(nz/pinch.z);TY=p1.y-(p0.y-pinch.ty)*(nz/pinch.z);Z=nz;applyView();moved=true;return;}
+  if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>6)moved=true;
+    if(moved){const p0=svgPt(drag.x,drag.y),p1=svgPt(e.clientX,e.clientY);TX=drag.tx+(p1.x-p0.x);TY=drag.ty+(p1.y-p0.y);applyView();}}
+  else if(e.pointerType==='mouse'){setHover(nearest(e.clientX,e.clientY));}});
+function endPtr(e){ptrs.delete(e.pointerId);
+  if(pinch&&ptrs.size<2){pinch=null;drag=null;return;}
+  if(drag&&!moved&&Date.now()-drag.t<600){const v=nearest(e.clientX,e.clientY);if(v>=0)tapVertex(v);else if(sel){sel=null;render();}}
+  drag=null;}
+wrap.addEventListener('pointerup',endPtr);wrap.addEventListener('pointercancel',endPtr);
+wrap.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')setHover(-1);});
+wrap.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);},{passive:false});
+$('zin').onclick=()=>{const r=svg.getBoundingClientRect();zoomAt(1.3,r.left+r.width/2,r.top+r.height/2);};
+$('zout').onclick=()=>{const r=svg.getBoundingClientRect();zoomAt(1/1.3,r.left+r.width/2,r.top+r.height/2);};
+$('zfit').onclick=fit;
+function nearest(cx,cy){const p=toBoard(cx,cy);let best=-1,bd=Infinity;
+  for(let v=0;v<N;v++){const P=pos[v],dx=P.x-p.x,dy=P.y-p.y,d=dx*dx+dy*dy;const lim=(P.r+8/Z)*(P.r+8/Z);if(d<=lim&&d<bd){bd=d;best=v;}}return best;}
+function setHover(v){if(v===hover)return;hover=v;if(!sel)applyHighlights(status());}
+
+/* ---------- panel actions ---------- */
+ctx.addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.go){const v=+b.dataset.go;const o=owner();
+    if(sel&&sel.type==='end'&&canJoin(v,sel.i,o)&&isAdj(v,sel.v)){extendTo(sel.i,sel.v,v);centerOn(v);return;}
+    sel=o[v]>=0&&isEnd(v,o)?{type:'end',i:o[v],v}:{type:'vertex',v};render();centerOn(v);return;}
+  if(b.dataset.end){const[i,v]=b.dataset.end.split(':').map(Number);sel={type:'end',i,v};render();centerOn(v);return;}
+  const a=b.dataset.act;
+  if(a==='deselect'){sel=null;render();}
+  else if(a==='join'){extendTo(+b.dataset.i,+b.dataset.end,+b.dataset.v);}
+  else if(a==='start'){startAt(+b.dataset.v);}
+  else if(a==='cut'){cut(+b.dataset.i,+b.dataset.j,b.dataset.side);}
+  else if(a==='deleteSnake'){cut(+b.dataset.i,0,'all');}
+  else if(a==='removeEnd'){removeEndSimple(+b.dataset.i,+b.dataset.v);}
+});
+$('undo').onclick=()=>{if(!undoS.length)return;redoS.push(snapshot());S.snakes=undoS.pop();sel=null;save();render();};
+$('redo').onclick=()=>{if(!redoS.length)return;undoS.push(snapshot());S.snakes=redoS.pop();sel=null;save();render();};
+
+/* ---------- search in a worker ---------- */
+const workerSrc=`onmessage=function(e){
+const {n,snakes,touch,budget}=e.data,N=1<<n,o=new Int8Array(N).fill(-1);
+const S=snakes.map(p=>p.slice());S.forEach((p,i)=>p.forEach(v=>o[v]=i));
+let nodes=0,cut=false,lastPost=0;const tot=()=>S.reduce((s,p)=>s+Math.max(0,p.length-1),0);
+let bestT=tot(),bestS=S.map(p=>p.slice());const active=[];S.forEach((p,i)=>{if(p.length)active.push(i);});
+function canJoin(v,i){if(o[v]>=0)return false;let ci=0,ca=0;for(let d=0;d<n;d++){const u=v^(1<<d);if(o[u]>=0){ca++;if(o[u]===i)ci++;}}return ci===1&&(touch||ca===1);}
+function record(){nodes++;if(budget>0&&nodes>budget)cut=true;const t=tot();if(t>bestT){bestT=t;bestS=S.map(p=>p.slice());}
+  if(nodes-lastPost>=1048576){lastPost=nodes;postMessage({type:'progress',nodes,bestT,bestS});}}
+function extend(i,cont){const p=S[i];const opts=p.length===1?[[p[0],true]]:[[p[p.length-1],true],[p[0],false]];
+  for(const[end,push]of opts){for(let d=0;d<n;d++){if(cut)return;const v=end^(1<<d);if(!canJoin(v,i))continue;
+    o[v]=i;if(push)p.push(v);else p.unshift(v);cont();if(push)p.pop();else p.shift();o[v]=-1;}}}
+function phase(j){if(cut||j>=active.length)return;record();phase(j+1);extend(active[j],()=>phase(j));}
+phase(0);postMessage({type:'done',nodes,bestT,bestS,cut});};`;
+let worker=null,lastBest=null,t0=0;
+function fmtN(x){return x>=1e9?(x/1e9).toFixed(1)+'B':x>=1e6?(x/1e6).toFixed(0)+'M':x>=1e3?(x/1e3).toFixed(0)+'k':String(x);}
+function applyBest(bestS,bestT,msg){
+  if(bestT>total()){commit(bestS);}
+  toast(msg);
+}
+$('extend').onclick=()=>{
+  if(worker)return;
+  if(S.snakes.every(p=>!p.length)){toast('Start at least one snake first. The search only extends existing snakes.');return;}
+  const url=URL.createObjectURL(new Blob([workerSrc],{type:'text/javascript'}));
+  worker=new Worker(url);URL.revokeObjectURL(url);
+  lastBest=null;t0=performance.now();
+  $('extend').style.display='none';$('prog').style.display='flex';$('progfill').style.width='0%';$('progtxt').textContent='Searching';
+  const B=S.budget;
+  worker.onmessage=e=>{const m=e.data;
+    if(m.type==='progress'){lastBest=m;$('progtxt').textContent=`${fmtN(m.nodes)} states · best ${m.bestT}`;if(B>0)$('progfill').style.width=Math.min(100,100*m.nodes/B)+'%';}
+    else if(m.type==='done'){stopSearch();const secs=((performance.now()-t0)/1000).toFixed(1);
+      applyBest(m.bestS,m.bestT,m.cut?`Stopped at the budget after ${fmtN(m.nodes)} states (${secs}s). Best found: ${m.bestT}.`:`Exhaustive: ${fmtN(m.nodes)} states in ${secs}s. Best reachable total: ${m.bestT}.`);}
+  };
+  worker.postMessage({n:S.n,snakes:S.snakes,touch:S.touch,budget:B});
+};
+function stopSearch(){if(worker){worker.terminate();worker=null;}$('extend').style.display='';$('prog').style.display='none';}
+$('stop').onclick=()=>{const lb=lastBest;stopSearch();
+  if(lb)applyBest(lb.bestS,lb.bestT,`Stopped after ${fmtN(lb.nodes)} states. Best found: ${lb.bestT}.`);else toast('Stopped.');};
+
+/* ---------- settings ---------- */
+const dlg=$('settings');
+for(let d=2;d<=10;d++)$('dim').insertAdjacentHTML('beforeend',`<option value="${d}">${d} (${1<<d} vertices)</option>`);
+for(let c=1;c<=10;c++)$('count').insertAdjacentHTML('beforeend',`<option value="${c}">${c}</option>`);
+function syncSettings(){
+  $('dim').value=S.n;$('count').value=S.k;$('touch').setAttribute('aria-checked',S.touch);
+  $('layout').value=S.layout;$('layout').querySelector('[value=proj]').disabled=S.n>4;
+  $('edgesmode').value=S.edgesMode;$('labels').value=S.labels;$('budget').value=S.budget;
+}
+$('setbtn').onclick=()=>{syncSettings();$('postext').value='';dlg.showModal();};
+$('closeset').onclick=()=>dlg.close();
+$('helpbtn').onclick=()=>$('help').showModal();
+$('closehelp').onclick=()=>$('help').close();
+$('dim').onchange=e=>{const d=+e.target.value;if(d===S.n)return;
+  if(S.snakes.some(p=>p.length)&&!confirm('Changing the dimension clears the board. Continue?')){e.target.value=S.n;return;}
+  S.n=d;if(S.n>4)S.layout='torus';if(S.n>=7&&S.edgesMode==='all')S.edgesMode='snakes';if(S.n<=6)S.edgesMode='all';
+  S.snakes=Array.from({length:S.k},()=>[]);undoS=[];redoS=[];sel=null;hover=-1;buildLayout();fit();syncSettings();save();render();};
+$('count').onchange=e=>{const c=+e.target.value;const next=S.snakes.slice(0,c);while(next.length<c)next.push([]);
+  if(next.length<S.snakes.length&&S.snakes.slice(c).some(p=>p.length)&&!confirm('This removes snakes beyond the new count. Continue?')){e.target.value=S.k;return;}
+  S.k=c;S.snakes=next;undoS=[];redoS=[];sel=null;save();render();};
+$('touch').onclick=e=>{S.touch=!S.touch;e.target.setAttribute('aria-checked',S.touch);save();render();};
+$('layout').onchange=e=>{S.layout=e.target.value;buildLayout();fit();save();render();};
+$('edgesmode').onchange=e=>{S.edgesMode=e.target.value;save();render();};
+$('labels').onchange=e=>{S.labels=e.target.value;save();render();};
+$('budget').onchange=e=>{S.budget=+e.target.value;save();};
+$('clear').onclick=()=>{if(S.snakes.some(p=>p.length))commit(S.snakes.map(()=>[]));dlg.close();};
+$('copypos').onclick=async()=>{const txt=JSON.stringify({n:S.n,touch:S.touch,snakes:S.snakes.map(p=>p.map(bin))});
+  $('postext').value=txt;try{await navigator.clipboard.writeText(txt);toast('Position copied.');}catch(err){toast('Copy from the text box below.');}};
+$('pastepos').onclick=()=>{try{const d=JSON.parse($('postext').value);
+    if(!d||!Array.isArray(d.snakes)||!(d.n>=2&&d.n<=10))throw 0;
+    S.n=d.n;if(S.n>4)S.layout='torus';buildLayout();
+    const snakes=d.snakes.map(p=>p.map(x=>typeof x==='string'?parseInt(x,2):x));
+    if(snakes.some(p=>p.some(v=>!(v>=0&&v<N))))throw 0;
+    S.k=Math.max(S.k,snakes.length);while(snakes.length<S.k)snakes.push([]);
+    if(typeof d.touch==='boolean')S.touch=d.touch;
+    undoS=[];redoS=[];sel=null;S.snakes=snakes;fit();syncSettings();save();render();dlg.close();toast('Position loaded.');
+  }catch(err){toast('That text is not a valid position.');}};
+
+/* ---------- persistence ---------- */
+function save(){try{localStorage.setItem('snakebox',JSON.stringify(S));}catch(err){}}
+function load(){try{const d=JSON.parse(localStorage.getItem('snakebox'));if(d&&d.n>=2&&d.n<=10&&Array.isArray(d.snakes))Object.assign(S,d);}catch(err){}}
+let toastT=0;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),4500);}
+
+load();buildLayout();fit();render();
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+})();
+</script>
+</body>
+</html>

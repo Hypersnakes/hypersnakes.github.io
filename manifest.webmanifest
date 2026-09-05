@@ -1,0 +1,17 @@
+{
+  "name": "Snakebox",
+  "short_name": "Snakebox",
+  "description": "A snake-in-the-box playground for hypercubes Q2 to Q10.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#E9EDF1",
+  "theme_color": "#0F6E56",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
