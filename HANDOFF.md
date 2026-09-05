@@ -9,7 +9,7 @@ It grew out of an interactive widget in a chat; this folder is the standalone ve
 ## Files
 
 - `index.html` — the entire app: CSS, markup, logic, and the search worker (as an inline source string turned into a Blob worker).
-- `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png` — PWA install and offline support. `sw.js` uses a network-first cache named `hypersnake-v3`; bump the name when `index.html` changes.
+- `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png` — PWA install and offline support. `sw.js` uses a network-first cache named `hypersnake-v4`; bump the name when `index.html` changes.
 - `README.md` — user-facing usage and deploy instructions (GitHub Pages → Add to Home Screen).
 
 ## Rules as implemented
@@ -48,13 +48,13 @@ Vertex fill: snake color if occupied, else the red ramp `REDS[cnt-1]` (white for
 
 ## Search (Web Worker)
 
-`workerSrc` string → `new Worker(blobURL)`. Exhaustive DFS that **only extends snakes already on the board** (never starts new ones). Canonical order avoids duplicate configurations: `phase(j)` records the state, recurses into `phase(j+1)`, then tries extending active snake `j` at both ends. This is complete because any final configuration can be built by finishing snake 0, then snake 1, etc. Objective = total edges across all snakes. Posts `{nodes, bestT, bestS}` every 2^20 states; Stop terminates the worker and applies the last progress message's best. Budget options 10M–1B or 0 = until stopped.
+`workerSrc` string → `new Worker(blobURL)`. Exhaustive DFS that **only extends snakes already on the board** (never starts new ones). It enumerates move sequences whose snake index never decreases: a frame for snake `j` first hands over to snake `j+1` (recording the state), then tries each extension of snake `j` (head end, then tail end) and recurses on `j`. This is complete because any final configuration can be built by finishing snake 0, then snake 1, etc. (the same configuration can still be reached by different head/tail orderings, so it is not duplicate-free). The stack is explicit (`stack` of `{j,k,mv}` frames) because the recursive version overflowed the call stack from Q15 up; node counts and results are identical to the recursive one. The best state is copied lazily: a push always adds one edge, so the best state is the current one until the next pop, and `keep()` snapshots it there or when reporting. Objective = total edges across all snakes. Posts `{nodes, bestT, bestS}` every 2^20 states; Stop terminates the worker and applies the last progress message's best; `worker.onerror` does the same with a toast. Budget options 10M–1B or 0 = until stopped.
 
 Best-known table (`MAXSNAKE`) carries published lower bounds through Q13 and shows `?` beyond.
 
-Measured: Q4 from one edge → 7 in 1,759 states. Q5 from one edge → 13 in 5.9M states (exhaustive). Q6 from one edge → 26 within 10M states (~3 s in Node) but not proven. Q7 from one edge → 43/50 after 7M states. Beyond that it's a lower bound.
+Measured: Q4 from one edge → 7 in 1,759 states. Q5 from one edge → 13 in 5.9M states (exhaustive, ~0.7 s in headless Chrome). Q6 from one edge → 26 within 10M states but not proven. Q7 from one edge → 43/50 after 7M states. Beyond that it's a lower bound. In 300k states from one edge the greedy descent reaches 1461 at Q13, 5237 at Q15, 36k at Q18 and 135k at Q20 (~2 s).
 
-Test harness idea: the worker source can be extracted and run in Node (`new Function('postMessage','data', src + ';onmessage({data});')`).
+Test harness: extract `workerSrc` and run it with `new Function('postMessage','data', src + ';onmessage({data});')` (works in a page or in Node).
 
 ## Persistence and interchange
 

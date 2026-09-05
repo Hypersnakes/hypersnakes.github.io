@@ -383,7 +383,7 @@ function renderBoard(){ // rebuild the board DOM for the current view; panels ar
   const vs=[];
   if(!w)for(let v=0;v<N;v++)vs.push(vertexSvg(v,st));
   else if(!w.overview)for(let r=w.r0;r<=w.r1;r++)for(let c=w.c0;c<=w.c1;c++)vs.push(vertexSvg(vAt(r,c),st));
-  else{const rad=Math.max(LG.r,3/(unitScale()*Z));S.snakes.forEach(p=>p.forEach(v=>vs.push(vertexSvg(v,st,rad))));}
+  else if(S.snakes.reduce((t,p)=>t+p.length,0)<=VCAP){const rad=Math.max(LG.r,3/(unitScale()*Z));S.snakes.forEach(p=>p.forEach(v=>vs.push(vertexSvg(v,st,rad))));} // longer snakes: strokes only
   const bg=w?`<rect class="extent" x="${LG.pad-LG.sp/2}" y="${LG.pad-LG.sp/2}" width="${LG.sp*LG.C}" height="${LG.sp*LG.R}" rx="${LG.sp/2}"/>`:'';
   svg.classList.toggle('overview',!!(w&&w.overview));
   view.innerHTML=bg+`<g id="edead">${dead.join('')}</g><g id="eav">${av.join('')}</g><g id="econ">${con.join('')}</g><g id="ov"></g><g id="esnk">${snk.join('')}</g><g id="vg">${vs.join('')}</g>`;
@@ -550,13 +550,26 @@ const S=snakes.map(p=>p.slice());S.forEach((p,i)=>p.forEach(v=>o[v]=i));
 let nodes=0,cut=false,lastPost=0;const tot=()=>S.reduce((s,p)=>s+Math.max(0,p.length-1),0);
 let bestT=tot(),bestS=S.map(p=>p.slice());const active=[];S.forEach((p,i)=>{if(p.length)active.push(i);});
 function canJoin(v,i){if(o[v]>=0)return false;let ci=0,ca=0;for(let d=0;d<n;d++){const u=v^(1<<d);if(o[u]>=0){ca++;if(o[u]===i)ci++;}}return ci===1&&(touch||ca===1);}
-function record(){nodes++;if(budget>0&&nodes>budget)cut=true;const t=tot();if(t>bestT){bestT=t;bestS=S.map(p=>p.slice());}
-  if(nodes-lastPost>=1048576){lastPost=nodes;postMessage({type:'progress',nodes,bestT,bestS});}}
-function extend(i,cont){const p=S[i];const opts=p.length===1?[[p[0],true]]:[[p[p.length-1],true],[p[0],false]];
-  for(const[end,push]of opts){for(let d=0;d<n;d++){if(cut)return;const v=end^(1<<d);if(!canJoin(v,i))continue;
-    o[v]=i;if(push)p.push(v);else p.unshift(v);cont();if(push)p.pop();else p.shift();o[v]=-1;}}}
-function phase(j){if(cut||j>=active.length)return;record();phase(j+1);extend(active[j],()=>phase(j));}
-phase(0);postMessage({type:'done',nodes,bestT,bestS,cut});};`;
+// A move always adds one edge, so the best total only improves on a push and the best state is the current one
+// until the next pop. Copying is deferred to that pop (or a report) instead of once per improvement.
+let pending=false;const keep=()=>{if(pending){bestS=S.map(p=>p.slice());pending=false;}};
+function record(){nodes++;if(budget>0&&nodes>budget)cut=true;const t=tot();if(t>bestT){bestT=t;pending=true;}
+  if(nodes-lastPost>=1048576){lastPost=nodes;keep();postMessage({type:'progress',nodes,bestT,bestS});}}
+// Depth-first search over move sequences whose snake index never decreases. The stack is explicit so
+// long snakes on big boards cannot overflow the call stack. A frame's k counts children tried:
+// 0 = hand over to the next snake first, then the moves of this snake (head end, then tail end).
+const stack=[{j:0,k:0,mv:null}];record();
+while(stack.length&&!cut){
+  const f=stack[stack.length-1];
+  if(f.k===0){f.k=1;if(f.j+1<active.length){stack.push({j:f.j+1,k:0,mv:null});record();continue;}}
+  const i=active[f.j],p=S[i],ends=p.length===1?1:2;let pushed=false;
+  while(f.k-1<ends*n){const c=f.k-1;f.k++;const push=c<n,d=c%n,end=push?p[p.length-1]:p[0],v=end^(1<<d);
+    if(!canJoin(v,i))continue;
+    o[v]=i;if(push)p.push(v);else p.unshift(v);stack.push({j:f.j,k:0,mv:{i,v,push}});record();pushed=true;break;}
+  if(pushed)continue;
+  keep();stack.pop();if(f.mv){const q=S[f.mv.i];if(f.mv.push)q.pop();else q.shift();o[f.mv.v]=-1;}
+}
+keep();postMessage({type:'done',nodes,bestT,bestS,cut});};`;
 let worker=null,lastBest=null,t0=0;
 function fmtN(x){return x>=1e9?(x/1e9).toFixed(1)+'B':x>=1e6?(x/1e6).toFixed(0)+'M':x>=1e3?(x/1e3).toFixed(0)+'k':String(x);}
 function applyBest(bestS,bestT,msg){
@@ -576,6 +589,8 @@ $('extend').onclick=()=>{
     else if(m.type==='done'){stopSearch();const secs=((performance.now()-t0)/1000).toFixed(1);
       applyBest(m.bestS,m.bestT,m.cut?`Stopped at the budget after ${fmtN(m.nodes)} states (${secs}s). Best found: ${m.bestT}.`:`Exhaustive: ${fmtN(m.nodes)} states in ${secs}s. Best reachable total: ${m.bestT}.`);}
   };
+  worker.onerror=e=>{const lb=lastBest;stopSearch();
+    if(lb)applyBest(lb.bestS,lb.bestT,`Search failed (${e.message}). Kept the best found: ${lb.bestT}.`);else toast(`Search failed: ${e.message}`);};
   worker.postMessage({n:S.n,snakes:S.snakes,touch:S.touch,budget:B});
 };
 function stopSearch(){if(worker){worker.terminate();worker=null;}$('extend').style.display='';$('prog').style.display='none';}

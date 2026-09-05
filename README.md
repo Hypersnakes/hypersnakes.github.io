@@ -24,7 +24,7 @@ It is a single-page web app with no build step and no dependencies.
 After that it launches full-screen from its own icon and works without a connection.
 Your board and settings are saved on the device between sessions.
 
-If you change `index.html` later, bump the `CACHE` name in `sw.js` (for example from `hypersnake-v3` to `hypersnake-v4`) so installed copies pick up the new version.
+If you change `index.html` later, bump the `CACHE` name in `sw.js` (for example from `hypersnake-v4` to `hypersnake-v5`) so installed copies pick up the new version.
 
 ## Using it
 
