@@ -1,4 +1,4 @@
-# Snakebox — handoff notes
+# HyperSnake — handoff notes
 
 ## What this is
 
@@ -9,12 +9,12 @@ It grew out of an interactive widget in a chat; this folder is the standalone ve
 ## Files
 
 - `index.html` — the entire app: CSS, markup, logic, and the search worker (as an inline source string turned into a Blob worker).
-- `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png` — PWA install and offline support. `sw.js` uses a network-first cache named `snakebox-v1`; bump the name when `index.html` changes.
+- `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png` — PWA install and offline support. `sw.js` uses a network-first cache named `hypersnake-v2`; bump the name when `index.html` changes.
 - `README.md` — user-facing usage and deploy instructions (GitHub Pages → Add to Home Screen).
 
 ## Rules as implemented
 
-- `k` snake slots (1–10). Each snake is an ordered vertex array; index 0 is the tail, last is the head. A single-vertex snake is allowed and has length 0 (length = edges = vertices − 1).
+- `k` snake slots (1–10), default 1. Each snake is an ordered vertex array; index 0 is the tail, last is the head. A single-vertex snake is allowed and has length 0 (length = edges = vertices − 1).
 - **Extending:** vertex `v` may be appended to snake `i` at end `e` iff `v` is unoccupied, `v` has exactly one neighbor in snake `i` (which must be `e`), and — when **Snakes may touch** is off — `v` has no neighbors in any other snake. See `canJoin(v,i,o)`.
 - **Starting:** an unoccupied vertex with a free slot; when touch is off it must also have zero snake neighbors. Tapping a completely empty board starts snake 1 immediately; otherwise you get a "Start snake N here" button.
 - **Touch mode on:** the only cross-snake rule is vertex-disjointness. Edges joining two different snakes are drawn coral and counted as "contacts".
@@ -33,7 +33,7 @@ Desktop mouse hover highlights a vertex's neighborhood; touch devices get the sa
 
 ## Layout
 
-- `buildLayout()`: for n ≤ 4 with layout `proj`, a parallel projection with axis vectors `AX` chosen by a random search so no two vertices or non-incident edges overlap (the classic tesseract drawing had collisions). Otherwise a Gray-code torus grid: rows = low ⌊n/2⌋ bits, columns = high ⌈n/2⌉ bits, both in Gray order, so every edge is within a row or column. Non-adjacent same-row/column pairs (wraparounds and the extra Gray-code chords once a side has ≥3 bits) are drawn as quadratic arcs bulging up/left, gap capped at 8 in `edgePath`.
+- `buildLayout()`: for n ≤ 4 with layout `proj`, a parallel projection with axis vectors `AX` chosen by a random search so no two vertices or non-incident edges overlap (the classic tesseract drawing had collisions). Otherwise a Gray-code torus grid: rows = low ⌊n/2⌋ bits, columns = high ⌈n/2⌉ bits, both in Gray order, so every edge is within a row or column. Non-adjacent same-row/column pairs (wraparounds and the extra Gray-code chords once a side has ≥3 bits) are drawn as quadratic arcs bulging up/left. Apex height is interpolated by gap between `LG.lo` (just clears the vertex circles the arc passes over) and `LG.hi` (just short of the next row/column), see `gapRange`/`arcH`; the earlier version scaled height by gap without a ceiling and the widest arcs ran straight through the row above.
 - Vertex spacing/radius: 120/17 (n ≤ 4), 72/15 (5–6), 56/13 (≥7). Labels binary for n ≤ 4, decimal otherwise (setting: auto/bin/dec/none).
 - `edgesMode` 'all' vs 'snakes' (only snake, contact, and highlight edges). Auto-switches to 'snakes' at n ≥ 7.
 - Pan/zoom: `Z, TX, TY` applied as a transform on `<g id="view">` inside a fixed viewBox; pointer events handle drag, pinch, wheel; `nearest()` does hit-testing in board coordinates with a tolerance that scales with zoom.
@@ -54,7 +54,7 @@ Test harness idea: the worker source can be extracted and run in Node (`new Func
 
 ## Persistence and interchange
 
-`S` (`{n,k,touch,snakes,layout,edgesMode,labels,budget}`) is saved to `localStorage['snakebox']` on every commit. Settings → Copy/Load position uses `{"n":4,"touch":false,"snakes":[["0000","0001",...],[...]]}` with binary strings (integers also accepted on load).
+`S` (`{n,k,touch,snakes,layout,edgesMode,labels,budget}`) is saved to `localStorage['hypersnake']` on every commit. First load (no saved state) opens the How to play dialog. Settings → Copy/Load position uses `{"n":4,"touch":false,"snakes":[["0000","0001",...],[...]]}` with binary strings (integers also accepted on load).
 
 ## What's been tested
 
@@ -65,7 +65,7 @@ Playwright + headless Chromium at 390×844 (2x) and 1200×800, light and dark: s
 - Code style is dense (written to fit one file); reformatting into readable sections or ES modules would help before larger changes.
 - `removeEndSimple` is the only end-removal function (an earlier `removeEnd` was deleted); rename freely.
 - Legend and zoom buttons can crowd each other when the legend wraps (n ≥ 7 on narrow screens).
-- Dimension/count changes use native `confirm()`.
+- Dimension/count changes use native `confirm()`. Reset in the bottom bar clears without confirming; it's undoable.
 - Search has no pruning and only one objective; from an empty-ish board in Q8+ it mostly burns budget.
 - Chord arcs in 'all' edge mode at n ≥ 7 are visually noisy (hence the default).
 

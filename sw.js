@@ -1,5 +1,5 @@
-// Snakebox service worker: caches the app so it works offline once installed.
-const CACHE = 'snakebox-v1';
+// HyperSnake service worker: caches the app so it works offline once installed.
+const CACHE = 'hypersnake-v2';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './icon-512-maskable.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

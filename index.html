@@ -7,11 +7,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Snakebox">
+<meta name="apple-mobile-web-app-title" content="HyperSnake">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<title>Snakebox</title>
+<title>HyperSnake</title>
 <style>
 :root{
   --bg:#E9EDF1;--surface:#FFFFFF;--surface-2:#F3F5F7;--line:#D3D9DF;--line-strong:#AEB7C0;
@@ -98,7 +98,7 @@ header .sp{flex:1}
 #prog .track{flex:1;height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}
 #prog .fill{height:100%;width:0;background:var(--accent);transition:width .2s}
 
-dialog{border:none;border-radius:14px;background:var(--surface);color:var(--ink);padding:0;max-width:min(92vw,520px);width:100%;max-height:88vh}
+dialog{margin:auto;border:none;border-radius:14px;background:var(--surface);color:var(--ink);padding:0;max-width:min(92vw,520px);width:100%;max-height:88vh}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog .body{padding:16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;max-height:88vh}
 dialog h2{font-size:17px;font-weight:600}
@@ -121,7 +121,7 @@ dialog ul{padding-left:18px;display:flex;flex-direction:column;gap:4px}
 <body>
 <div id="app">
   <header>
-    <h1>Snakebox</h1>
+    <h1>HyperSnake</h1>
     <span class="q" id="qchip">Q4</span>
     <span class="sp"></span>
     <button class="icon" id="helpbtn" aria-label="How to play" title="How to play">?</button>
@@ -148,6 +148,7 @@ dialog ul{padding-left:18px;display:flex;flex-direction:column;gap:4px}
   <nav id="bar">
     <button id="undo" aria-label="Undo">Undo</button>
     <button id="redo" aria-label="Redo">Redo</button>
+    <button id="reset" class="danger" aria-label="Reset board">Reset</button>
     <span class="sp"></span>
     <div id="prog"><span id="progtxt">Searching</span><div class="track"><div class="fill" id="progfill"></div></div><button id="stop">Stop</button></div>
     <button id="extend" class="primary">Extend snakes</button>
@@ -180,7 +181,7 @@ dialog ul{padding-left:18px;display:flex;flex-direction:column;gap:4px}
       <li>Tap a white or pink vertex to extend the nearest snake end to it. If more than one end could reach it, you choose.</li>
       <li>Tap a snake end to select it; its legal moves light up in blue. Tap them in turn to keep growing.</li>
       <li>Tap a vertex on a snake to cut the snake there, or to delete it.</li>
-      <li>Tap an empty vertex to start a new snake when a slot is free.</li>
+      <li>Tap an empty vertex to start a new snake when a slot is free. Reset clears the board; Undo brings it back. The number of snakes is set in Settings.</li>
       <li>Shading shows how many snake vertices a vertex touches, from white (none) to deep red. An amber ring marks vertices some end can still reach.</li>
       <li>Extend snakes runs an exhaustive search from the current position, growing only the snakes already on the board. It stops at the budget set in Settings and keeps the best it found.</li>
       <li>Pinch or scroll to zoom, drag to pan. In the grid layout, rows are the low bits and columns the high bits, both in Gray-code order, so each row and column is a hypercube of its own.</li>
@@ -202,8 +203,8 @@ const REDS=['var(--r1)','var(--r2)','var(--r3)','var(--r4)','var(--r5)','var(--r
 const redFill=c=>c===0?'var(--free)':REDS[Math.min(c-1,REDS.length-1)];
 const redText=c=>c===0?'var(--free-text)':c<=3?'#501313':'#ffffff';
 
-const S={n:4,k:2,touch:false,snakes:[[],[]],layout:'proj',edgesMode:'all',labels:'auto',budget:30000000};
-let N=16,pos=[],W=680,H=520,sel=null,hover=-1,undoS=[],redoS=[],vEls=[],eEls=[];
+const S={n:4,k:1,touch:false,snakes:[[]],layout:'proj',edgesMode:'all',labels:'auto',budget:30000000};
+let N=16,pos=[],W=680,H=520,sel=null,hover=-1,undoS=[],redoS=[],vEls=[],eEls=[],LG=null;
 const $=id=>document.getElementById(id);
 const svg=$('board'),view=$('view'),ctx=$('ctx');
 const bin=v=>v.toString(2).padStart(S.n,'0');
@@ -225,18 +226,29 @@ function buildLayout(){
   }
   const lb=Math.floor(S.n/2),hb=S.n-lb,R=1<<lb,C=1<<hb,gi=grayIndex(lb),gc=grayIndex(hb);
   const sp=S.n<=4?120:S.n<=6?72:56,r=S.n<=4?17:S.n<=6?15:13,pad=sp*1.1;
+  // chord arcs (non-adjacent same-row/column pairs) must clear the vertex circles they pass over
+  // but stay inside the band before the next row/column, so apex heights are spread between those limits
+  LG={lo:r+6,hi:sp-r-8,row:gapRange(lb,gi),col:gapRange(hb,gc)};
   W=Math.round(2*pad+sp*(C-1));H=Math.round(2*pad+sp*(R-1));
   for(let i=0;i<N;i++){const row=gi[i&(R-1)],col=gc[i>>lb];pos[i]={x:pad+col*sp,y:pad+row*sp,r,row,col,sp};}
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
 }
+function gapRange(bits,gidx){ // smallest and largest chord gap (>1) among edges along one axis of the grid
+  let mn=Infinity,mx=0;const M=1<<bits;
+  for(let a=0;a<M;a++)for(let d=0;d<bits;d++){const b=a^(1<<d);if(b<a)continue;const g=Math.abs(gidx[a]-gidx[b]);if(g>1){mn=Math.min(mn,g);mx=Math.max(mx,g);}}
+  return{min:mn,max:mx};
+}
+function arcH(g,ax){ // apex height of a chord with gap g, interpolated between the clearance limits
+  if(ax.max<=ax.min)return(LG.lo+LG.hi)/2;
+  return LG.lo+(LG.hi-LG.lo)*(g-ax.min)/(ax.max-ax.min);
+}
 function edgePath(a,b){
   const A=pos[a],B=pos[b];
   if(A.row===undefined)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
-  const k=A.sp*0.24;
-  if(A.row===B.row){const g=Math.min(8,Math.abs(A.col-B.col));if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
-    return`M${A.x} ${A.y}Q${(A.x+B.x)/2} ${A.y-(k*g+k)} ${B.x} ${B.y}`;}
-  const g=Math.min(8,Math.abs(A.row-B.row));if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
-  return`M${A.x} ${A.y}Q${A.x-(k*g+k)} ${(A.y+B.y)/2} ${B.x} ${B.y}`;
+  if(A.row===B.row){const g=Math.abs(A.col-B.col);if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
+    return`M${A.x} ${A.y}Q${(A.x+B.x)/2} ${A.y-2*arcH(g,LG.col)} ${B.x} ${B.y}`;}
+  const g=Math.abs(A.row-B.row);if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
+  return`M${A.x} ${A.y}Q${A.x-2*arcH(g,LG.row)} ${(A.y+B.y)/2} ${B.x} ${B.y}`;
 }
 const label=v=>{const m=S.labels==='auto'?(S.n<=4?'bin':'dec'):S.labels;return m==='bin'?bin(v):m==='dec'?String(v):'';};
 
@@ -339,7 +351,7 @@ function render(){
   renderStats(st,avail,contacts);
   renderCtx(st);
   renderLegend();
-  $('undo').disabled=!undoS.length;$('redo').disabled=!redoS.length;
+  $('undo').disabled=!undoS.length;$('redo').disabled=!redoS.length;$('reset').disabled=!S.snakes.some(p=>p.length);
   $('qchip').textContent=`Q${S.n}`;
 }
 function applyHighlights(st){
@@ -461,6 +473,7 @@ ctx.addEventListener('click',e=>{
 });
 $('undo').onclick=()=>{if(!undoS.length)return;redoS.push(snapshot());S.snakes=undoS.pop();sel=null;save();render();};
 $('redo').onclick=()=>{if(!redoS.length)return;undoS.push(snapshot());S.snakes=redoS.pop();sel=null;save();render();};
+$('reset').onclick=()=>{stopSearch();if(S.snakes.some(p=>p.length)){commit(S.snakes.map(()=>[]));toast('Board cleared. Undo brings it back.');}};
 
 /* ---------- search in a worker ---------- */
 const workerSrc=`onmessage=function(e){
@@ -540,11 +553,12 @@ $('pastepos').onclick=()=>{try{const d=JSON.parse($('postext').value);
   }catch(err){toast('That text is not a valid position.');}};
 
 /* ---------- persistence ---------- */
-function save(){try{localStorage.setItem('snakebox',JSON.stringify(S));}catch(err){}}
-function load(){try{const d=JSON.parse(localStorage.getItem('snakebox'));if(d&&d.n>=2&&d.n<=10&&Array.isArray(d.snakes))Object.assign(S,d);}catch(err){}}
+function save(){try{localStorage.setItem('hypersnake',JSON.stringify(S));}catch(err){}}
+function load(){try{const d=JSON.parse(localStorage.getItem('hypersnake'));if(d&&d.n>=2&&d.n<=10&&Array.isArray(d.snakes)){Object.assign(S,d);return true;}}catch(err){}return false;}
 let toastT=0;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),4500);}
 
-load();buildLayout();fit();render();
+const returning=load();buildLayout();fit();render();
+if(!returning){save();$('help').showModal();}
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
 </script>

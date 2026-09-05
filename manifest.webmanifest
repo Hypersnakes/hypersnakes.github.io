@@ -1,6 +1,6 @@
 {
-  "name": "Snakebox",
-  "short_name": "Snakebox",
+  "name": "HyperSnake",
+  "short_name": "HyperSnake",
   "description": "A snake-in-the-box playground for hypercubes Q2 to Q10.",
   "start_url": "./",
   "scope": "./",
