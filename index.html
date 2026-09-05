@@ -70,6 +70,9 @@ header .sp{flex:1}
 .v.focus circle{stroke:var(--accent);stroke-width:5.5}
 .v text{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;pointer-events:none}
 .faded .e.dead,.faded .e.avail{opacity:.25}
+.extent{fill:none;stroke:var(--line-strong);stroke-width:2;vector-effect:non-scaling-stroke}
+.overview .e.snk,.overview .e.contact{vector-effect:non-scaling-stroke;stroke-width:3}
+.overview .v circle{stroke-width:0}
 
 #panel{grid-area:panel;background:var(--surface);border-top:1px solid var(--line);height:var(--panel-h);overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
 @media (min-width:900px){#panel{border-top:none;border-left:1px solid var(--line);height:auto}}
@@ -186,7 +189,7 @@ dialog ul{padding-left:18px;display:flex;flex-direction:column;gap:4px}
       <li>Extend snakes runs an exhaustive search from the current position, growing only the snakes already on the board. It stops at the budget set in Settings and keeps the best it found.</li>
       <li>Pinch or scroll to zoom, drag to pan. In the grid layout, rows are the low bits and columns the high bits, both in Gray-code order, so each row and column is a hypercube of its own.</li>
     </ul>
-    <p>Longest known snakes: Q2 2, Q3 4, Q4 7, Q5 13, Q6 26, Q7 50, Q8 98. Q9 and Q10 are open.</p>
+    <p>Longest known snakes: Q2 2, Q3 4, Q4 7, Q5 13, Q6 26, Q7 50, Q8 98. From Q9 up the problem is open; the stats show the best published lower bound where one exists. Dimensions above Q10 are there for the silly: the board is drawn around wherever you are looking, and zoomed all the way out you see just the outline and the snakes.</p>
     <div class="row"><button id="closehelp" class="primary">Close</button></div>
   </div>
 </dialog>
@@ -195,7 +198,8 @@ dialog ul{padding-left:18px;display:flex;flex-direction:column;gap:4px}
 <script>
 (function(){
 'use strict';
-const MAXSNAKE={2:2,3:4,4:7,5:13,6:26,7:50,8:98,9:'190+',10:'370+'};
+const MAXSNAKE={2:2,3:4,4:7,5:13,6:26,7:50,8:98,9:'190+',10:'370+',11:'712+',12:'1373+',13:'2687+'};
+const NMAX=20,VCAP=4096; // largest dimension offered; most vertices drawn at once before switching to the overview
 const COL=[
   ['#0F6E56','#1D9E75'],['#534AB7','#7F77DD'],['#185FA5','#378ADD'],['#993556','#D4537E'],['#3B6D11','#639922'],
   ['#854F0B','#BA7517'],['#0B5F6E','#1B9AB0'],['#6B2D75','#A85BB5'],['#1F2A6B','#4A5BD0'],['#444441','#888780']];
@@ -204,7 +208,7 @@ const redFill=c=>c===0?'var(--free)':REDS[Math.min(c-1,REDS.length-1)];
 const redText=c=>c===0?'var(--free-text)':c<=3?'#501313':'#ffffff';
 
 const S={n:4,k:1,touch:false,snakes:[[]],layout:'proj',edgesMode:'all',labels:'auto',budget:30000000};
-let N=16,pos=[],W=680,H=520,sel=null,hover=-1,undoS=[],redoS=[],vEls=[],eEls=[],LG=null;
+let N=16,W=680,H=520,sel=null,hover=-1,undoS=[],redoS=[],vEls=new Map(),LG=null,ST=null,lastWin=null;
 const $=id=>document.getElementById(id);
 const svg=$('board'),view=$('view'),ctx=$('ctx');
 const bin=v=>v.toString(2).padStart(S.n,'0');
@@ -213,26 +217,36 @@ const total=()=>S.snakes.reduce((s,p)=>s+lenOf(p),0);
 
 /* ---------- graph and layout ---------- */
 function grayIndex(b){const idx=new Array(1<<b);for(let i=0;i<(1<<b);i++)idx[i^(i>>1)]=i;return idx;}
+const gray=i=>i^(i>>1);
+let projPos=null;
 function buildLayout(){
-  N=1<<S.n;pos=[];
+  N=1<<S.n;projPos=null;
   if(S.layout==='proj'&&S.n<=4){
     // parallel projection chosen so that no two vertices or non-incident edges overlap
     const AX=[[65.2,-249.6],[159.2,-60.4],[330.8,3.5],[-32,-126.4]];
     const raw=[];for(let i=0;i<N;i++){let x=0,y=0;for(let d=0;d<S.n;d++)if((i>>d)&1){x+=AX[d][0];y+=AX[d][1];}raw.push([x,y]);}
     const xs=raw.map(p=>p[0]),ys=raw.map(p=>p[1]),mx=Math.min(...xs),my=Math.min(...ys),bw=Math.max(...xs)-mx||1,bh=Math.max(...ys)-my||1;
     W=680;H=520;const sc=Math.min(600/bw,440/bh,2.2),ox=(W-bw*sc)/2,oy=(H-bh*sc)/2;
-    for(let i=0;i<N;i++)pos[i]={x:ox+(raw[i][0]-mx)*sc,y:oy+(raw[i][1]-my)*sc,r:17};
+    projPos=[];for(let i=0;i<N;i++)projPos[i]={x:ox+(raw[i][0]-mx)*sc,y:oy+(raw[i][1]-my)*sc,r:17};
+    LG={grid:false,sp:120,r:17};
     svg.setAttribute('viewBox',`0 0 ${W} ${H}`);return;
   }
   const lb=Math.floor(S.n/2),hb=S.n-lb,R=1<<lb,C=1<<hb,gi=grayIndex(lb),gc=grayIndex(hb);
   const sp=S.n<=4?120:S.n<=6?72:56,r=S.n<=4?17:S.n<=6?15:13,pad=sp*1.1;
   // chord arcs (non-adjacent same-row/column pairs) must clear the vertex circles they pass over
   // but stay inside the band before the next row/column, so apex heights are spread between those limits
-  LG={lo:r+6,hi:sp-r-8,row:gapRange(lb,gi),col:gapRange(hb,gc)};
+  LG={grid:true,lb,hb,R,C,gi,gc,sp,r,pad,lo:r+6,hi:sp-r-8,row:gapRange(lb,gi),col:gapRange(hb,gc)};
   W=Math.round(2*pad+sp*(C-1));H=Math.round(2*pad+sp*(R-1));
-  for(let i=0;i<N;i++){const row=gi[i&(R-1)],col=gc[i>>lb];pos[i]={x:pad+col*sp,y:pad+row*sp,r,row,col,sp};}
+  if(CULL())S.edgesMode='snakes';
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
 }
+const CULL=()=>LG.grid&&N>1024; // big boards: draw only the visible part of the grid
+function P(v){ // position of vertex v, computed on the fly for the grid so no per-vertex storage is needed
+  if(!LG.grid)return projPos[v];
+  const row=LG.gi[v&(LG.R-1)],col=LG.gc[v>>LG.lb];
+  return{x:LG.pad+col*LG.sp,y:LG.pad+row*LG.sp,r:LG.r,row,col};
+}
+const vAt=(row,col)=>gray(row)|(gray(col)<<LG.lb); // vertex at a grid cell
 function gapRange(bits,gidx){ // smallest and largest chord gap (>1) among edges along one axis of the grid
   let mn=Infinity,mx=0;const M=1<<bits;
   for(let a=0;a<M;a++)for(let d=0;d<bits;d++){const b=a^(1<<d);if(b<a)continue;const g=Math.abs(gidx[a]-gidx[b]);if(g>1){mn=Math.min(mn,g);mx=Math.max(mx,g);}}
@@ -243,14 +257,14 @@ function arcH(g,ax){ // apex height of a chord with gap g, interpolated between 
   return LG.lo+(LG.hi-LG.lo)*(g-ax.min)/(ax.max-ax.min);
 }
 function edgePath(a,b){
-  const A=pos[a],B=pos[b];
-  if(A.row===undefined)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
+  const A=P(a),B=P(b);
+  if(!LG.grid)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
   if(A.row===B.row){const g=Math.abs(A.col-B.col);if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
     return`M${A.x} ${A.y}Q${(A.x+B.x)/2} ${A.y-2*arcH(g,LG.col)} ${B.x} ${B.y}`;}
   const g=Math.abs(A.row-B.row);if(g===1)return`M${A.x} ${A.y}L${B.x} ${B.y}`;
   return`M${A.x} ${A.y}Q${A.x-2*arcH(g,LG.row)} ${(A.y+B.y)/2} ${B.x} ${B.y}`;
 }
-const label=v=>{const m=S.labels==='auto'?(S.n<=4?'bin':'dec'):S.labels;return m==='bin'?bin(v):m==='dec'?String(v):'';};
+const label=v=>{const m=S.labels==='auto'?(S.n<=4?'bin':S.n<=13?'dec':'none'):S.labels;return m==='bin'?bin(v):m==='dec'?String(v):'';};
 
 /* ---------- rules ---------- */
 function owner(){const o=new Int8Array(N).fill(-1);S.snakes.forEach((p,i)=>p.forEach(v=>o[v]=i));return o;}
@@ -268,14 +282,15 @@ function joinOptions(v,o){
   return out;
 }
 function status(){
-  const o=owner(),cnt=new Uint8Array(N),open=new Uint8Array(N);
+  const o=owner(),cnt=new Uint8Array(N),open=new Uint8Array(N),idx=new Int32Array(N);
+  S.snakes.forEach(p=>p.forEach((v,j)=>idx[v]=j));
   for(let v=0;v<N;v++){if(o[v]>=0)continue;let c=0;
     for(let d=0;d<S.n;d++){const u=v^(1<<d);if(o[u]>=0){c++;if(!open[v]&&isEnd(u,o)&&canJoin(v,o[u],o))open[v]=1;}}
     cnt[v]=c;}
-  return{o,cnt,open};
+  return{o,cnt,open,idx,slotFree:emptySlot()>=0};
 }
 const emptySlot=()=>S.snakes.findIndex(p=>!p.length);
-function canStart(v,st){return st.o[v]<0&&(S.touch||st.cnt[v]===0)&&emptySlot()>=0;}
+function canStart(v,st){return st.o[v]<0&&(S.touch||st.cnt[v]===0)&&st.slotFree;}
 function candidates(i,end,o){const out=[];for(let d=0;d<S.n;d++){const v=end^(1<<d);if(canJoin(v,i,o))out.push(v);}return out;}
 
 /* ---------- state changes ---------- */
@@ -320,36 +335,68 @@ function tapVertex(v){
 const isAdj=(a,b)=>{const x=a^b;return x&&(x&(x-1))===0;};
 
 /* ---------- rendering ---------- */
-function render(){
-  const st=status(),{o,cnt,open}=st;
-  const showAll=S.edgesMode==='all';
-  let avail=0,contacts=0;
+function classify(a,b,st){ // what an edge is right now: snk, contact, avail, or dead
+  const o=st.o;
+  if(o[a]>=0&&o[b]>=0)return o[a]===o[b]?(Math.abs(st.idx[a]-st.idx[b])===1?'snk':'dead'):'contact';
+  if(o[a]<0&&o[b]<0)return(canStart(a,st)&&canStart(b,st))?'avail':'dead';
+  if((o[a]>=0&&isEnd(a,o)&&canJoin(b,o[a],o))||(o[b]>=0&&isEnd(b,o)&&canJoin(a,o[b],o)))return'avail';
+  return'dead';
+}
+function forAllEdges(fn){for(let a=0;a<N;a++)for(let d=0;d<S.n;d++){const b=a^(1<<d);if(b>a)fn(a,b);}}
+function forSnakeEdges(fn){ // snake edges and contacts only, each once; cheap even on huge boards
+  const o=ST.o;
+  S.snakes.forEach((p,i)=>{
+    for(let j=1;j<p.length;j++)fn(p[j-1],p[j],'snk');
+    for(const v of p)for(let d=0;d<S.n;d++){const u=v^(1<<d);if(u>v&&o[u]>=0&&o[u]!==i)fn(v,u,'contact');}
+  });
+}
+function viewWindow(){ // visible grid cells (with a margin), or null when the whole board is drawn
+  if(!CULL())return null;
+  const rc=svg.getBoundingClientRect(),a=toBoard(rc.left,rc.top),b=toBoard(rc.right,rc.bottom),{sp,pad,R,C}=LG;
+  const c0=Math.max(0,Math.floor((a.x-pad)/sp)-1),c1=Math.min(C-1,Math.ceil((b.x-pad)/sp)+1);
+  const r0=Math.max(0,Math.floor((a.y-pad)/sp)-1),r1=Math.min(R-1,Math.ceil((b.y-pad)/sp)+1);
+  const cells=Math.max(0,r1-r0+1)*Math.max(0,c1-c0+1);
+  return{r0,r1,c0,c1,cells,overview:cells>VCAP,z:Z};
+}
+function edgeVisible(a,b,w){ // chords run along a row or column, so a span test is exact
+  if(!w)return true;const A=P(a),B=P(b);
+  if(A.row===B.row)return A.row>=w.r0&&A.row<=w.r1&&Math.max(A.col,B.col)>=w.c0&&Math.min(A.col,B.col)<=w.c1;
+  return A.col>=w.c0&&A.col<=w.c1&&Math.max(A.row,B.row)>=w.r0&&Math.min(A.row,B.row)<=w.r1;
+}
+function vertexSvg(v,st,rad){
+  const o=st.o,Pv=P(v),end=o[v]>=0&&isEnd(v,o);let cls='v',cs,ts;
+  if(o[v]>=0){cls+=end?' end':'';cs=`fill:${COL[o[v]][0]};${end?'':'stroke:'+COL[o[v]][0]}`;ts='fill:#fff';}
+  else{cls+=st.open[v]?' open':'';cs=`fill:${redFill(st.cnt[v])}`;ts=`fill:${redText(st.cnt[v])}`;}
+  const r=rad||Pv.r,lab=rad?'':label(v),fs=Math.max(9,Math.round(r*0.68));
+  return`<g class="${cls}" data-v="${v}"><circle cx="${Pv.x}" cy="${Pv.y}" r="${r}" style="${cs}"/>${lab?`<text x="${Pv.x}" y="${Pv.y}" dy="${fs*0.36}" font-size="${fs}" text-anchor="middle" style="${ts}">${lab}</text>`:''}</g>`;
+}
+function renderBoard(){ // rebuild the board DOM for the current view; panels are untouched
+  if(!ST)return;
+  const st=ST,w=viewWindow();lastWin=w;
   const dead=[],av=[],snk=[],con=[];
-  for(let a=0;a<N;a++)for(let d=0;d<S.n;d++){const b=a^(1<<d);if(b<a)continue;
-    let cls;
-    if(o[a]>=0&&o[b]>=0){
-      if(o[a]===o[b]){const p=S.snakes[o[a]];cls=Math.abs(p.indexOf(a)-p.indexOf(b))===1?'snk':'dead';}
-      else cls='contact';
-    }else if(o[a]<0&&o[b]<0)cls=(canStart(a,st)&&canStart(b,st))?'avail':'dead';
-    else if((o[a]>=0&&isEnd(a,o)&&canJoin(b,o[a],o))||(o[b]>=0&&isEnd(b,o)&&canJoin(a,o[b],o)))cls='avail';
-    else cls='dead';
-    if(cls==='avail')avail++;if(cls==='contact')contacts++;
-    if(cls==='snk')snk.push(`<path class="e snk" style="stroke:${COL[o[a]][1]}" d="${edgePath(a,b)}"/>`);
+  const put=(a,b,cls)=>{
+    if(cls==='snk')snk.push(`<path class="e snk" style="stroke:${COL[st.o[a]][1]}" d="${edgePath(a,b)}"/>`);
     else if(cls==='contact')con.push(`<path class="e contact" d="${edgePath(a,b)}"/>`);
-    else if(showAll){(cls==='avail'?av:dead).push(`<path class="e ${cls}" d="${edgePath(a,b)}"/>`);}
-  }
+    else(cls==='avail'?av:dead).push(`<path class="e ${cls}" d="${edgePath(a,b)}"/>`);};
+  if(S.edgesMode==='all')forAllEdges((a,b)=>put(a,b,classify(a,b,st)));
+  else forSnakeEdges((a,b,cls)=>{if(edgeVisible(a,b,w))put(a,b,cls);});
   const vs=[];
-  for(let v=0;v<N;v++){const P=pos[v],end=o[v]>=0&&isEnd(v,o);let cls='v',cs,ts;
-    if(o[v]>=0){cls+=end?' end':'';cs=`fill:${COL[o[v]][0]};${end?'':'stroke:'+COL[o[v]][0]}`;ts='fill:#fff';}
-    else{cls+=open[v]?' open':'';cs=`fill:${redFill(cnt[v])}`;ts=`fill:${redText(cnt[v])}`;}
-    const lab=label(v),fs=Math.max(9,Math.round(P.r*0.68));
-    vs.push(`<g class="${cls}" data-v="${v}"><circle cx="${P.x}" cy="${P.y}" r="${P.r}" style="${cs}"/>${lab?`<text x="${P.x}" y="${P.y}" dy="${fs*0.36}" font-size="${fs}" text-anchor="middle" style="${ts}">${lab}</text>`:''}</g>`);
-  }
-  view.innerHTML=`<g id="edead">${dead.join('')}</g><g id="eav">${av.join('')}</g><g id="econ">${con.join('')}</g><g id="ov"></g><g id="esnk">${snk.join('')}</g><g id="vg">${vs.join('')}</g>`;
-  vEls=[];view.querySelectorAll('g.v').forEach(g=>vEls[+g.dataset.v]=g);
+  if(!w)for(let v=0;v<N;v++)vs.push(vertexSvg(v,st));
+  else if(!w.overview)for(let r=w.r0;r<=w.r1;r++)for(let c=w.c0;c<=w.c1;c++)vs.push(vertexSvg(vAt(r,c),st));
+  else{const rad=Math.max(LG.r,3/(unitScale()*Z));S.snakes.forEach(p=>p.forEach(v=>vs.push(vertexSvg(v,st,rad))));}
+  const bg=w?`<rect class="extent" x="${LG.pad-LG.sp/2}" y="${LG.pad-LG.sp/2}" width="${LG.sp*LG.C}" height="${LG.sp*LG.R}" rx="${LG.sp/2}"/>`:'';
+  svg.classList.toggle('overview',!!(w&&w.overview));
+  view.innerHTML=bg+`<g id="edead">${dead.join('')}</g><g id="eav">${av.join('')}</g><g id="econ">${con.join('')}</g><g id="ov"></g><g id="esnk">${snk.join('')}</g><g id="vg">${vs.join('')}</g>`;
+  vEls=new Map();view.querySelectorAll('g.v').forEach(g=>vEls.set(+g.dataset.v,g));
   applyHighlights(st);
-  renderStats(st,avail,contacts);
-  renderCtx(st);
+}
+function render(){
+  ST=status();
+  let avail=0,contacts=0;
+  forAllEdges((a,b)=>{const c=classify(a,b,ST);if(c==='avail')avail++;else if(c==='contact')contacts++;});
+  renderBoard();
+  renderStats(ST,avail,contacts);
+  renderCtx(ST);
   renderLegend();
   $('undo').disabled=!undoS.length;$('redo').disabled=!redoS.length;$('reset').disabled=!S.snakes.some(p=>p.length);
   $('qchip').textContent=`Q${S.n}`;
@@ -360,17 +407,17 @@ function applyHighlights(st){
   svg.classList.remove('faded');
   const focusV=sel?sel.v:hover;
   if(focusV>=0&&focusV<N){
-    vEls[focusV].classList.add('focus');svg.classList.add('faded');
-    for(let d=0;d<S.n;d++){const u=focusV^(1<<d);vEls[u].classList.add('nb');html+=`<path class="e hl" d="${edgePath(focusV,u)}"/>`;}
+    const fg=vEls.get(focusV);if(fg)fg.classList.add('focus');svg.classList.add('faded');
+    for(let d=0;d<S.n;d++){const u=focusV^(1<<d),g=vEls.get(u);if(g)g.classList.add('nb');html+=`<path class="e hl" d="${edgePath(focusV,u)}"/>`;}
   }
   if(sel&&sel.type==='end'){
-    for(const v of candidates(sel.i,sel.v,o)){vEls[v].classList.add('cand');html+=`<path class="e cand" d="${edgePath(sel.v,v)}"/>`;}
+    for(const v of candidates(sel.i,sel.v,o)){const g=vEls.get(v);if(g)g.classList.add('cand');html+=`<path class="e cand" d="${edgePath(sel.v,v)}"/>`;}
   }
   ov.innerHTML=html;
 }
 function renderStats(st,avail,contacts){
   const chips=S.snakes.map((p,i)=>`<span class="stat"><i style="background:${COL[i][0]}"></i>${p.length?`<b>${lenOf(p)}</b>`:'<span class="empty">empty</span>'}</span>`).join('');
-  $('stats').innerHTML=chips+`<span class="stat">total <b>${total()}</b></span><span class="stat">moves <b>${avail}</b></span>`+((S.touch||contacts)?`<span class="stat" style="color:var(--coral)">contacts <b>${contacts}</b></span>`:'')+`<span class="stat">best known <b>${MAXSNAKE[S.n]}</b></span>`;
+  $('stats').innerHTML=chips+`<span class="stat">total <b>${total()}</b></span><span class="stat">moves <b>${avail}</b></span>`+((S.touch||contacts)?`<span class="stat" style="color:var(--coral)">contacts <b>${contacts}</b></span>`:'')+`<span class="stat">best known <b>${MAXSNAKE[S.n]??'?'}</b></span>`;
 }
 function vchip(v,st,extra){
   const o=st.o;const tag=o[v]>=0?`<i style="background:${COL[o[v]][0]};border-color:${COL[o[v]][0]}"></i>`:`<i style="background:${redFill(st.cnt[v])}"></i>`;
@@ -423,13 +470,27 @@ function renderLegend(){
 }
 
 /* ---------- pan & zoom ---------- */
-let Z=1,TX=0,TY=0;
-function applyView(){view.setAttribute('transform',`translate(${TX} ${TY}) scale(${Z})`);}
+let Z=1,TX=0,TY=0,boardPending=false;
+function applyView(){
+  view.setAttribute('transform',`translate(${TX} ${TY}) scale(${Z})`);
+  if(!CULL()||boardPending)return;
+  boardPending=true;
+  requestAnimationFrame(()=>{boardPending=false;const w=viewWindow(),l=lastWin;
+    if(!l||w.r0!==l.r0||w.r1!==l.r1||w.c0!==l.c0||w.c1!==l.c1||w.overview!==l.overview||(w.overview&&w.z!==l.z))renderBoard();});
+}
 function svgPt(cx,cy){const pt=svg.createSVGPoint();pt.x=cx;pt.y=cy;return pt.matrixTransform(svg.getScreenCTM().inverse());}
 function toBoard(cx,cy){const p=svgPt(cx,cy);return{x:(p.x-TX)/Z,y:(p.y-TY)/Z};}
-function zoomAt(f,cx,cy){const p=svgPt(cx,cy);const nz=Math.min(12,Math.max(0.4,Z*f));TX=p.x-(p.x-TX)*(nz/Z);TY=p.y-(p.y-TY)*(nz/Z);Z=nz;applyView();}
+function unitScale(){const rc=svg.getBoundingClientRect();return Math.min(rc.width/W,rc.height/H)||1;} // screen px per board unit at Z=1
+function zoomFor(px){return px/(LG.sp*unitScale());} // zoom at which neighbouring vertices sit px apart on screen
+function clampZ(z){return Math.min(Math.max(12,zoomFor(160)),Math.max(0.4,z));}
+function zoomAt(f,cx,cy){const p=svgPt(cx,cy);const nz=clampZ(Z*f);TX=p.x-(p.x-TX)*(nz/Z);TY=p.y-(p.y-TY)*(nz/Z);Z=nz;applyView();}
 function fit(){Z=1;TX=0;TY=0;applyView();}
-function centerOn(v){const P=pos[v];const z=Math.max(Z,S.n>=7?3:S.n>=5?2:1);Z=z;TX=W/2-z*P.x;TY=H/2-z*P.y;applyView();}
+function centerOn(v){const Pv=P(v);const z=Math.max(Z,S.n>=5?zoomFor(64):1);Z=z;TX=W/2-z*Pv.x;TY=H/2-z*Pv.y;applyView();}
+function resetView(){ // huge boards open at vertex level with the grid's corner near the screen corner, not as a smear
+  if(!CULL()){fit();return;}
+  Z=clampZ(zoomFor(64));const rc=svg.getBoundingClientRect(),p=svgPt(rc.left,rc.top),off=LG.pad-LG.sp*0.75;
+  TX=p.x-Z*off;TY=p.y-Z*off;applyView();
+}
 const ptrs=new Map();let drag=null,pinch=null,moved=false;
 const wrap=$('boardwrap');
 wrap.addEventListener('pointerdown',e=>{if(e.target.closest('#zoomctl'))return;wrap.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -437,24 +498,31 @@ wrap.addEventListener('pointerdown',e=>{if(e.target.closest('#zoomctl'))return;w
   else if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y),z:Z,mx:(a.x+b.x)/2,my:(a.y+b.y)/2,tx:TX,ty:TY};drag=null;}});
 wrap.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(pinch&&ptrs.size===2){const[a,b]=[...ptrs.values()];const d=Math.hypot(a.x-b.x,a.y-b.y),mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-    const f=Math.min(12,Math.max(0.4,pinch.z*d/pinch.d))/pinch.z;const p0=svgPt(pinch.mx,pinch.my),p1=svgPt(mx,my);
+    const f=clampZ(pinch.z*d/pinch.d)/pinch.z;const p0=svgPt(pinch.mx,pinch.my),p1=svgPt(mx,my);
     const nz=pinch.z*f;TX=p1.x-(p0.x-pinch.tx)*(nz/pinch.z);TY=p1.y-(p0.y-pinch.ty)*(nz/pinch.z);Z=nz;applyView();moved=true;return;}
   if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>6)moved=true;
     if(moved){const p0=svgPt(drag.x,drag.y),p1=svgPt(e.clientX,e.clientY);TX=drag.tx+(p1.x-p0.x);TY=drag.ty+(p1.y-p0.y);applyView();}}
   else if(e.pointerType==='mouse'){setHover(nearest(e.clientX,e.clientY));}});
 function endPtr(e){ptrs.delete(e.pointerId);
   if(pinch&&ptrs.size<2){pinch=null;drag=null;return;}
-  if(drag&&!moved&&Date.now()-drag.t<600){const v=nearest(e.clientX,e.clientY);if(v>=0)tapVertex(v);else if(sel){sel=null;render();}}
+  if(drag&&!moved&&Date.now()-drag.t<600){
+    if(lastWin&&lastWin.overview){toast('Zoom in to reach the vertices.');}
+    else{const v=nearest(e.clientX,e.clientY);if(v>=0)tapVertex(v);else if(sel){sel=null;render();}}}
   drag=null;}
 wrap.addEventListener('pointerup',endPtr);wrap.addEventListener('pointercancel',endPtr);
 wrap.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')setHover(-1);});
 wrap.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);},{passive:false});
+addEventListener('resize',()=>applyView()); // the visible patch of a big board changes with the viewport
 $('zin').onclick=()=>{const r=svg.getBoundingClientRect();zoomAt(1.3,r.left+r.width/2,r.top+r.height/2);};
 $('zout').onclick=()=>{const r=svg.getBoundingClientRect();zoomAt(1/1.3,r.left+r.width/2,r.top+r.height/2);};
 $('zfit').onclick=fit;
-function nearest(cx,cy){const p=toBoard(cx,cy);let best=-1,bd=Infinity;
-  for(let v=0;v<N;v++){const P=pos[v],dx=P.x-p.x,dy=P.y-p.y,d=dx*dx+dy*dy;const lim=(P.r+8/Z)*(P.r+8/Z);if(d<=lim&&d<bd){bd=d;best=v;}}return best;}
-function setHover(v){if(v===hover)return;hover=v;if(!sel)applyHighlights(status());}
+function nearest(cx,cy){const p=toBoard(cx,cy),tol=8/Z;
+  if(LG.grid){const col=Math.round((p.x-LG.pad)/LG.sp),row=Math.round((p.y-LG.pad)/LG.sp);
+    if(row<0||row>=LG.R||col<0||col>=LG.C)return-1;
+    const v=vAt(row,col),Pv=P(v);return Math.hypot(Pv.x-p.x,Pv.y-p.y)<=Pv.r+tol?v:-1;}
+  let best=-1,bd=Infinity;
+  for(let v=0;v<N;v++){const Pv=P(v),dx=Pv.x-p.x,dy=Pv.y-p.y,d=dx*dx+dy*dy;const lim=(Pv.r+tol)*(Pv.r+tol);if(d<=lim&&d<bd){bd=d;best=v;}}return best;}
+function setHover(v){if(v===hover)return;hover=v;if(!sel)applyHighlights(ST);}
 
 /* ---------- panel actions ---------- */
 ctx.addEventListener('click',e=>{
@@ -516,12 +584,12 @@ $('stop').onclick=()=>{const lb=lastBest;stopSearch();
 
 /* ---------- settings ---------- */
 const dlg=$('settings');
-for(let d=2;d<=10;d++)$('dim').insertAdjacentHTML('beforeend',`<option value="${d}">${d} (${1<<d} vertices)</option>`);
+for(let d=2;d<=NMAX;d++)$('dim').insertAdjacentHTML('beforeend',`<option value="${d}">${d} (${(1<<d).toLocaleString()} vertices)</option>`);
 for(let c=1;c<=10;c++)$('count').insertAdjacentHTML('beforeend',`<option value="${c}">${c}</option>`);
 function syncSettings(){
   $('dim').value=S.n;$('count').value=S.k;$('touch').setAttribute('aria-checked',S.touch);
   $('layout').value=S.layout;$('layout').querySelector('[value=proj]').disabled=S.n>4;
-  $('edgesmode').value=S.edgesMode;$('labels').value=S.labels;$('budget').value=S.budget;
+  $('edgesmode').value=S.edgesMode;$('edgesmode').querySelector('[value=all]').disabled=CULL();$('labels').value=S.labels;$('budget').value=S.budget;
 }
 $('setbtn').onclick=()=>{syncSettings();$('postext').value='';dlg.showModal();};
 $('closeset').onclick=()=>dlg.close();
@@ -530,12 +598,12 @@ $('closehelp').onclick=()=>$('help').close();
 $('dim').onchange=e=>{const d=+e.target.value;if(d===S.n)return;
   if(S.snakes.some(p=>p.length)&&!confirm('Changing the dimension clears the board. Continue?')){e.target.value=S.n;return;}
   S.n=d;if(S.n>4)S.layout='torus';if(S.n>=7&&S.edgesMode==='all')S.edgesMode='snakes';if(S.n<=6)S.edgesMode='all';
-  S.snakes=Array.from({length:S.k},()=>[]);undoS=[];redoS=[];sel=null;hover=-1;buildLayout();fit();syncSettings();save();render();};
+  S.snakes=Array.from({length:S.k},()=>[]);undoS=[];redoS=[];sel=null;hover=-1;buildLayout();render();resetView();syncSettings();save();};
 $('count').onchange=e=>{const c=+e.target.value;const next=S.snakes.slice(0,c);while(next.length<c)next.push([]);
   if(next.length<S.snakes.length&&S.snakes.slice(c).some(p=>p.length)&&!confirm('This removes snakes beyond the new count. Continue?')){e.target.value=S.k;return;}
   S.k=c;S.snakes=next;undoS=[];redoS=[];sel=null;save();render();};
 $('touch').onclick=e=>{S.touch=!S.touch;e.target.setAttribute('aria-checked',S.touch);save();render();};
-$('layout').onchange=e=>{S.layout=e.target.value;buildLayout();fit();save();render();};
+$('layout').onchange=e=>{S.layout=e.target.value;buildLayout();render();resetView();save();};
 $('edgesmode').onchange=e=>{S.edgesMode=e.target.value;save();render();};
 $('labels').onchange=e=>{S.labels=e.target.value;save();render();};
 $('budget').onchange=e=>{S.budget=+e.target.value;save();};
@@ -543,21 +611,21 @@ $('clear').onclick=()=>{if(S.snakes.some(p=>p.length))commit(S.snakes.map(()=>[]
 $('copypos').onclick=async()=>{const txt=JSON.stringify({n:S.n,touch:S.touch,snakes:S.snakes.map(p=>p.map(bin))});
   $('postext').value=txt;try{await navigator.clipboard.writeText(txt);toast('Position copied.');}catch(err){toast('Copy from the text box below.');}};
 $('pastepos').onclick=()=>{try{const d=JSON.parse($('postext').value);
-    if(!d||!Array.isArray(d.snakes)||!(d.n>=2&&d.n<=10))throw 0;
+    if(!d||!Array.isArray(d.snakes)||!(d.n>=2&&d.n<=NMAX))throw 0;
     S.n=d.n;if(S.n>4)S.layout='torus';buildLayout();
     const snakes=d.snakes.map(p=>p.map(x=>typeof x==='string'?parseInt(x,2):x));
     if(snakes.some(p=>p.some(v=>!(v>=0&&v<N))))throw 0;
     S.k=Math.max(S.k,snakes.length);while(snakes.length<S.k)snakes.push([]);
     if(typeof d.touch==='boolean')S.touch=d.touch;
-    undoS=[];redoS=[];sel=null;S.snakes=snakes;fit();syncSettings();save();render();dlg.close();toast('Position loaded.');
+    undoS=[];redoS=[];sel=null;S.snakes=snakes;render();resetView();syncSettings();save();dlg.close();toast('Position loaded.');
   }catch(err){toast('That text is not a valid position.');}};
 
 /* ---------- persistence ---------- */
 function save(){try{localStorage.setItem('hypersnake',JSON.stringify(S));}catch(err){}}
-function load(){try{const d=JSON.parse(localStorage.getItem('hypersnake'));if(d&&d.n>=2&&d.n<=10&&Array.isArray(d.snakes)){Object.assign(S,d);return true;}}catch(err){}return false;}
+function load(){try{const d=JSON.parse(localStorage.getItem('hypersnake'));if(d&&d.n>=2&&d.n<=NMAX&&Array.isArray(d.snakes)){Object.assign(S,d);return true;}}catch(err){}return false;}
 let toastT=0;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),4500);}
 
-const returning=load();buildLayout();fit();render();
+const returning=load();buildLayout();render();resetView();
 if(!returning){save();$('help').showModal();}
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();

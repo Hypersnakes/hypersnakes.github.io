@@ -1,6 +1,6 @@
 # HyperSnake
 
-A snake-in-the-box playground for the hypercubes Q2 through Q10, built to run on a phone.
+A snake-in-the-box playground for the hypercubes Q2 through Q20, built to run on a phone.
 It is a single-page web app with no build step and no dependencies.
 
 **Play it:** https://hypersnakes.github.io/
@@ -24,7 +24,7 @@ It is a single-page web app with no build step and no dependencies.
 After that it launches full-screen from its own icon and works without a connection.
 Your board and settings are saved on the device between sessions.
 
-If you change `index.html` later, bump the `CACHE` name in `sw.js` (for example from `hypersnake-v2` to `hypersnake-v3`) so installed copies pick up the new version.
+If you change `index.html` later, bump the `CACHE` name in `sw.js` (for example from `hypersnake-v3` to `hypersnake-v4`) so installed copies pick up the new version.
 
 ## Using it
 
@@ -34,3 +34,4 @@ If you change `index.html` later, bump the `CACHE` name in `sw.js` (for example 
 - Shading is the number of snake vertices a vertex touches; an amber ring marks vertices some end can still reach; coral edges join two different snakes (only possible when "Snakes may touch" is on).
 - "Extend snakes" runs an exhaustive depth-first search from the current position in a background thread, growing only the snakes already on the board. It stops at the budget chosen in Settings (or when you press Stop) and applies the best configuration it found. Exhaustive results are realistic up to Q6 and for well-advanced positions in Q7; beyond that the search is a lower bound.
 - Copy position / Load position in Settings exports and imports a small JSON string, so you can save interesting configurations or move them between devices.
+- Dimensions above Q10 are for the silly. Q20 has about a million vertices, so the board is drawn only around the part you are looking at; zoom all the way out and you see the outline of the grid with the snakes drawn across it.

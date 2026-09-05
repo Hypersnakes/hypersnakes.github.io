@@ -2,14 +2,14 @@
 
 ## What this is
 
-A snake-in-the-box playground for hypercubes Q2–Q10, built as a single-file PWA so it runs on a phone. A *snake* is an induced path in the hypercube: no two vertices on it are adjacent unless they are consecutive. The app lets you grow up to 10 snakes at once by tapping vertices, shows a "burn map" of how many snake vertices each vertex touches, and can run an exhaustive search that extends the snakes already on the board.
+A snake-in-the-box playground for hypercubes Q2–Q20, built as a single-file PWA so it runs on a phone. A *snake* is an induced path in the hypercube: no two vertices on it are adjacent unless they are consecutive. The app lets you grow up to 10 snakes at once by tapping vertices, shows a "burn map" of how many snake vertices each vertex touches, and can run an exhaustive search that extends the snakes already on the board.
 
 It grew out of an interactive widget in a chat; this folder is the standalone version. No build step, no dependencies, vanilla JS.
 
 ## Files
 
 - `index.html` — the entire app: CSS, markup, logic, and the search worker (as an inline source string turned into a Blob worker).
-- `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png` — PWA install and offline support. `sw.js` uses a network-first cache named `hypersnake-v2`; bump the name when `index.html` changes.
+- `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `icon-512-maskable.png` — PWA install and offline support. `sw.js` uses a network-first cache named `hypersnake-v3`; bump the name when `index.html` changes.
 - `README.md` — user-facing usage and deploy instructions (GitHub Pages → Add to Home Screen).
 
 ## Rules as implemented
@@ -35,18 +35,22 @@ Desktop mouse hover highlights a vertex's neighborhood; touch devices get the sa
 
 - `buildLayout()`: for n ≤ 4 with layout `proj`, a parallel projection with axis vectors `AX` chosen by a random search so no two vertices or non-incident edges overlap (the classic tesseract drawing had collisions). Otherwise a Gray-code torus grid: rows = low ⌊n/2⌋ bits, columns = high ⌈n/2⌉ bits, both in Gray order, so every edge is within a row or column. Non-adjacent same-row/column pairs (wraparounds and the extra Gray-code chords once a side has ≥3 bits) are drawn as quadratic arcs bulging up/left. Apex height is interpolated by gap between `LG.lo` (just clears the vertex circles the arc passes over) and `LG.hi` (just short of the next row/column), see `gapRange`/`arcH`; the earlier version scaled height by gap without a ceiling and the widest arcs ran straight through the row above.
 - Vertex spacing/radius: 120/17 (n ≤ 4), 72/15 (5–6), 56/13 (≥7). Labels binary for n ≤ 4, decimal otherwise (setting: auto/bin/dec/none).
-- `edgesMode` 'all' vs 'snakes' (only snake, contact, and highlight edges). Auto-switches to 'snakes' at n ≥ 7.
-- Pan/zoom: `Z, TX, TY` applied as a transform on `<g id="view">` inside a fixed viewBox; pointer events handle drag, pinch, wheel; `nearest()` does hit-testing in board coordinates with a tolerance that scales with zoom.
+- `edgesMode` 'all' vs 'snakes' (only snake, contact, and highlight edges). Auto-switches to 'snakes' at n ≥ 7 and is forced there for n ≥ 11.
+- Vertex positions are not stored; `P(v)` computes them from the Gray-code row/column (`projPos` holds the n ≤ 4 projection). `vAt(row,col)` is the inverse.
+- **Big boards (n ≥ 11, `CULL()`):** `viewWindow()` works out the visible cell range from the screen rect, `renderBoard()` draws only those cells (via `vAt`) and only snake/contact edges whose row/column span crosses the window (`edgeVisible`). If the window holds more than `VCAP` (4096) cells it switches to an overview: grid outline (`.extent`), snake edges with non-scaling strokes, snake vertices only, taps disabled. `applyView()` schedules a `renderBoard()` on the next frame whenever the window changes, so panning re-draws; `render()` (state changes) still does the global `status()` and move count, about 150 ms at Q20. `resetView()` opens big boards at vertex level anchored at the grid's corner. Zoom cap comes from `zoomFor()` so it scales with the board.
+- Pan/zoom: `Z, TX, TY` applied as a transform on `<g id="view">` inside a fixed viewBox; pointer events handle drag, pinch, wheel; `nearest()` does hit-testing in board coordinates with a tolerance that scales with zoom (O(1) on the grid by rounding to a cell, a scan for the projection).
 
 ## Rendering
 
-`render()` rebuilds `#view` innerHTML from scratch each state change (fine up to Q10: ~276 ms tap-to-paint measured in headless Chrome). Groups in draw order: `edead`, `eav`, `econ` (contacts), `ov` (neighborhood/candidate overlay), `esnk` (snake edges), `vg` (vertices). `applyHighlights()` only toggles classes on cached vertex elements and rewrites `#ov`, so hover/selection changes are cheap.
+`render()` recomputes `ST=status()` and the move count, then `renderBoard()` rebuilds `#view` innerHTML for the current view (whole board up to Q10, visible window above). Groups in draw order: `edead`, `eav`, `econ` (contacts), `ov` (neighborhood/candidate overlay), `esnk` (snake edges), `vg` (vertices). `applyHighlights()` only toggles classes on cached vertex elements and rewrites `#ov`, so hover/selection changes are cheap.
 
 Vertex fill: snake color if occupied, else the red ramp `REDS[cnt-1]` (white for 0). Amber ring = some end can reach it; thick dark ring = snake end; blue rings = focused vertex's neighbors; blue dashed edge + thick blue ring = legal move from the selected end.
 
 ## Search (Web Worker)
 
 `workerSrc` string → `new Worker(blobURL)`. Exhaustive DFS that **only extends snakes already on the board** (never starts new ones). Canonical order avoids duplicate configurations: `phase(j)` records the state, recurses into `phase(j+1)`, then tries extending active snake `j` at both ends. This is complete because any final configuration can be built by finishing snake 0, then snake 1, etc. Objective = total edges across all snakes. Posts `{nodes, bestT, bestS}` every 2^20 states; Stop terminates the worker and applies the last progress message's best. Budget options 10M–1B or 0 = until stopped.
+
+Best-known table (`MAXSNAKE`) carries published lower bounds through Q13 and shows `?` beyond.
 
 Measured: Q4 from one edge → 7 in 1,759 states. Q5 from one edge → 13 in 5.9M states (exhaustive). Q6 from one edge → 26 within 10M states (~3 s in Node) but not proven. Q7 from one edge → 43/50 after 7M states. Beyond that it's a lower bound.
 
