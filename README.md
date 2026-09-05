@@ -3,7 +3,7 @@
 A snake-in-the-box playground for the hypercubes Q2 through Q10, built to run on a phone.
 It is a single-page web app with no build step and no dependencies.
 
-**Play it:** https://syxtonprime.github.io/SnakePit/
+**Play it:** https://hypersnakes.github.io/
 
 ## Files
 
