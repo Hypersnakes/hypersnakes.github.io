@@ -17,7 +17,7 @@ It grew out of an interactive widget in a chat; this folder is the standalone ve
 - `k` snake slots (1–10), default 1. Each snake is an ordered vertex array; index 0 is the tail, last is the head. A single-vertex snake is allowed and has length 0 (length = edges = vertices − 1).
 - **Extending:** vertex `v` may be appended to snake `i` at end `e` iff `v` is unoccupied, `v` has exactly one neighbor in snake `i` (which must be `e`), and — when **Snakes may touch** is off — `v` has no neighbors in any other snake. See `canJoin(v,i,o)`.
 - **Starting:** an unoccupied vertex with a free slot; when touch is off it must also have zero snake neighbors. Tapping a completely empty board starts snake 1 immediately; otherwise you get a "Start snake N here" button.
-- **Touch mode on:** the only cross-snake rule is vertex-disjointness. Edges joining two different snakes are drawn coral and counted as "contacts".
+- **Touch mode on:** the only cross-snake rule is vertex-disjointness. Edges joining two different snakes are drawn coral and counted as "contacts". The coral edges can be hidden with **Show contact edges** (`S.contacts`, default on; the switch is only shown while touch mode is on); the contacts count in the stats is unaffected.
 - Turning touch off with contacts present doesn't alter the board; those edges just stop being legal moves.
 
 ## Interaction model (tap vertices, not edges)
@@ -58,7 +58,7 @@ Test harness: extract `workerSrc` and run it with `new Function('postMessage','d
 
 ## Persistence and interchange
 
-`S` (`{n,k,touch,snakes,layout,edgesMode,labels,budget}`) is saved to `localStorage['hypersnake']` on every commit. First load (no saved state) opens the How to play dialog. Settings → Copy/Load position uses `{"n":4,"touch":false,"snakes":[["0000","0001",...],[...]]}` with binary strings (integers also accepted on load).
+`S` (`{n,k,touch,contacts,snakes,layout,edgesMode,labels,budget}`) is saved to `localStorage['hypersnake']` on every commit. First load (no saved state) opens the How to play dialog. Settings → Copy/Load position uses `{"n":4,"touch":false,"snakes":[["0000","0001",...],[...]]}` with binary strings (integers also accepted on load).
 
 ## What's been tested
 

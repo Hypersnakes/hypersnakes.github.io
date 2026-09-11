@@ -107,6 +107,7 @@ dialog .body{padding:16px;display:flex;flex-direction:column;gap:14px;overflow-y
 dialog h2{font-size:17px;font-weight:600}
 dialog h3{font-size:14px;font-weight:600;margin-top:6px}
 .field{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.field[hidden]{display:none}
 .field label{font-size:14px}
 .field .hint{font-size:12px;color:var(--ink-3)}
 .switch{position:relative;width:44px;height:26px;background:var(--line-strong);border-radius:13px;border:none;padding:0;min-height:0;flex:none}
@@ -164,6 +165,7 @@ dialog ul{padding-left:18px;display:flex;flex-direction:column;gap:4px}
     <div class="field"><label for="dim">Dimension</label><select id="dim"></select></div>
     <div class="field"><label for="count">Snakes</label><select id="count"></select></div>
     <div class="field"><label id="touchlbl">Snakes may touch<div class="hint">Off: no vertex may be adjacent to two different snakes.</div></label><button class="switch" id="touch" role="switch" aria-checked="false" aria-labelledby="touchlbl"></button></div>
+    <div class="field" id="contactsfield"><label id="contactslbl">Show contact edges<div class="hint">Red edges where two different snakes are adjacent.</div></label><button class="switch" id="contacts" role="switch" aria-checked="true" aria-labelledby="contactslbl"></button></div>
     <div class="field"><label for="layout">Layout</label><select id="layout"><option value="proj">Cube projection</option><option value="torus">Gray-code grid</option></select></div>
     <div class="field"><label for="edgesmode">Edges shown<div class="hint">Hide unused edges on big boards.</div></label><select id="edgesmode"><option value="all">All</option><option value="snakes">Snakes and contacts</option></select></div>
     <div class="field"><label for="labels">Vertex labels</label><select id="labels"><option value="auto">Automatic</option><option value="bin">Binary</option><option value="dec">Decimal</option><option value="none">None</option></select></div>
@@ -207,7 +209,7 @@ const REDS=['var(--r1)','var(--r2)','var(--r3)','var(--r4)','var(--r5)','var(--r
 const redFill=c=>c===0?'var(--free)':REDS[Math.min(c-1,REDS.length-1)];
 const redText=c=>c===0?'var(--free-text)':c<=3?'#501313':'#ffffff';
 
-const S={n:4,k:1,touch:false,snakes:[[]],layout:'proj',edgesMode:'all',labels:'auto',budget:30000000};
+const S={n:4,k:1,touch:false,contacts:true,snakes:[[]],layout:'proj',edgesMode:'all',labels:'auto',budget:30000000};
 let N=16,W=680,H=520,sel=null,hover=-1,undoS=[],redoS=[],vEls=new Map(),LG=null,ST=null,lastWin=null;
 const $=id=>document.getElementById(id);
 const svg=$('board'),view=$('view'),ctx=$('ctx');
@@ -376,7 +378,7 @@ function renderBoard(){ // rebuild the board DOM for the current view; panels ar
   const dead=[],av=[],snk=[],con=[];
   const put=(a,b,cls)=>{
     if(cls==='snk')snk.push(`<path class="e snk" style="stroke:${COL[st.o[a]][1]}" d="${edgePath(a,b)}"/>`);
-    else if(cls==='contact')con.push(`<path class="e contact" d="${edgePath(a,b)}"/>`);
+    else if(cls==='contact'){if(S.contacts)con.push(`<path class="e contact" d="${edgePath(a,b)}"/>`);}
     else(cls==='avail'?av:dead).push(`<path class="e ${cls}" d="${edgePath(a,b)}"/>`);};
   if(S.edgesMode==='all')forAllEdges((a,b)=>put(a,b,classify(a,b,st)));
   else forSnakeEdges((a,b,cls)=>{if(edgeVisible(a,b,w))put(a,b,cls);});
@@ -602,7 +604,7 @@ const dlg=$('settings');
 for(let d=2;d<=NMAX;d++)$('dim').insertAdjacentHTML('beforeend',`<option value="${d}">${d} (${(1<<d).toLocaleString()} vertices)</option>`);
 for(let c=1;c<=10;c++)$('count').insertAdjacentHTML('beforeend',`<option value="${c}">${c}</option>`);
 function syncSettings(){
-  $('dim').value=S.n;$('count').value=S.k;$('touch').setAttribute('aria-checked',S.touch);
+  $('dim').value=S.n;$('count').value=S.k;$('touch').setAttribute('aria-checked',S.touch);$('contacts').setAttribute('aria-checked',S.contacts);$('contactsfield').hidden=!S.touch;
   $('layout').value=S.layout;$('layout').querySelector('[value=proj]').disabled=S.n>4;
   $('edgesmode').value=S.edgesMode;$('edgesmode').querySelector('[value=all]').disabled=CULL();$('labels').value=S.labels;$('budget').value=S.budget;
 }
@@ -617,7 +619,8 @@ $('dim').onchange=e=>{const d=+e.target.value;if(d===S.n)return;
 $('count').onchange=e=>{const c=+e.target.value;const next=S.snakes.slice(0,c);while(next.length<c)next.push([]);
   if(next.length<S.snakes.length&&S.snakes.slice(c).some(p=>p.length)&&!confirm('This removes snakes beyond the new count. Continue?')){e.target.value=S.k;return;}
   S.k=c;S.snakes=next;undoS=[];redoS=[];sel=null;save();render();};
-$('touch').onclick=e=>{S.touch=!S.touch;e.target.setAttribute('aria-checked',S.touch);save();render();};
+$('touch').onclick=e=>{S.touch=!S.touch;e.target.setAttribute('aria-checked',S.touch);$('contactsfield').hidden=!S.touch;save();render();};
+$('contacts').onclick=e=>{S.contacts=!S.contacts;e.target.setAttribute('aria-checked',S.contacts);save();render();};
 $('layout').onchange=e=>{S.layout=e.target.value;buildLayout();render();resetView();save();};
 $('edgesmode').onchange=e=>{S.edgesMode=e.target.value;save();render();};
 $('labels').onchange=e=>{S.labels=e.target.value;save();render();};
